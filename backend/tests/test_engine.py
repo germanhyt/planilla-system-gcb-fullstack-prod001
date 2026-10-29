@@ -119,9 +119,9 @@ def test_horas_extra_split():
     assert he_35 == 0.0
 
 
-def test_turno_cruza_medianoche(db: Session):
+def test_turno_cruza_medianoche(db: Session, unique_id):
     """Test de turno que cruza medianoche (19:00-02:00)."""
-    empresa = Empresa(codigo="CAVAS", razon_social="Cavas Sisa", ruc="20123456789")
+    empresa = Empresa(codigo=unique_id, razon_social=f"Test{unique_id}", ruc=f"20{unique_id[1:]}111")
     db.add(empresa)
     db.flush()
     

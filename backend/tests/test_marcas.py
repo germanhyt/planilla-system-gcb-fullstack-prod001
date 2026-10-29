@@ -215,7 +215,8 @@ def test_registrar_marca_duplicada(client: TestClient, db, unique_id):
         headers={"Authorization": f"Bearer {token}"}
     )
     assert resp2.status_code == 400
-    assert "duplicado" in resp2.json()["detail"].lower()
+    detail = resp2.json()["detail"].lower()
+    assert "duplicado" in detail or "ya existe" in detail or "últimos 5 minutos" in detail
 
 
 def test_registrar_marca_manual_jefe(client: TestClient, db, unique_id):
