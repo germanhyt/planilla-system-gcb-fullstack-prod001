@@ -1,13 +1,13 @@
 """Semilla ficticia y anonimizada (idempotente). Ver README: patrones derivados del Excel de referencia.
 NO contiene nombres, DNI ni sueldos reales. Uso: python seed.py"""
 import random
-from datetime import date, time
+from datetime import date, datetime, time, timedelta
 
 from sqlalchemy import select
 
 from app.config import settings
 from app.db import SessionLocal
-from app.models import Empresa, RuleSet, Sede, TipoContrato, Trabajador, TurnoPlantilla, Unidad, Usuario
+from app.models import Empresa, HorarioPlan, Marca, RuleSet, Sede, TipoContrato, Trabajador, TurnoPlantilla, Unidad, Usuario
 from app.rules import CAVAS, GCB_SA
 from app.security import hash_password
 
@@ -81,8 +81,101 @@ def main():
                       doc_tipo="FICT", doc_numero=f"Y{i:07d}", nombres=rnd.choice(NOMBRES), apellidos=rnd.choice(APELLIDOS),
                       area="Operaciones", cargo="Controlador/a de parking", tipo_contrato_id=tc["FT"].id,
                       fecha_ingreso=date(2025, 6, 1))
+    
+    # Sprint 3: Agregar horarios semanales de muestra para trabajadores
+    trabajadores = db.scalars(select(Trabajador).where(Trabajador.activo == True).limit(10)).all()
+    turnos_cavas_ids = db.scalars(select(TurnoPlantilla.id).where(TurnoPlantilla.unidad_id == u_cav.id)).all()
+    turnos_parking_ids = db.scalars(select(TurnoPlantilla.id).where(TurnoPlantilla.unidad_id == u_par.id)).all()
+    
+    # Semana actual para horarios
+    hoy = date.today()
+    semana_inicio = hoy - timedelta(days=hoy.weekday())
+    
+    for trab in trabajadores[:5]:  # primeros 5 de Cavas
+        if trab.unidad_id == u_cav.id and turnos_cavas_ids:
+            lun_tur = rnd.choice(turnos_cavas_ids)
+            mar_tur = rnd.choice(turnos_cavas_ids)
+            mie_tur = rnd.choice(turnos_cavas_ids)
+            jue_tur = rnd.choice(turnos_cavas_ids)
+            vie_tur = rnd.choice(turnos_cavas_ids)
+            sab_tur = rnd.choice(turnos_cavas_ids)
+            dom_tur = None  # descanso
+            
+            get_or_create(
+                db,
+                HorarioPlan,
+                {"trabajador_id": trab.id, "semana_inicio": semana_inicio, "version": 1},
+                lunes_plantilla_id=lun_tur,
+                martes_plantilla_id=mar_tur,
+                miercoles_plantilla_id=mie_tur,
+                jueves_plantilla_id=jue_tur,
+                viernes_plantilla_id=vie_tur,
+                sabado_plantilla_id=sab_tur,
+                domingo_plantilla_id=dom_tur,
+                creado_por=users["admin"].id,
+            )
+    
+    for trab in trabajadores[5:8]:  # algunos de Parking
+        if trab.unidad_id == u_par.id and turnos_parking_ids:
+            turno = rnd.choice(turnos_parking_ids)
+            get_or_create(
+                db,
+                HorarioPlan,
+                {"trabajador_id": trab.id, "semana_inicio": semana_inicio, "version": 1},
+                lunes_plantilla_id=turno,
+                martes_plantilla_id=turno,
+                miercoles_plantilla_id=turno,
+                jueves_plantilla_id=turno,
+                viernes_plantilla_id=turno,
+                sabado_plantilla_id=turno,
+                domingo_plantilla_id=None,  # descanso
+                creado_por=users["admin"].id,
+            )
+    
+    # Sprint 3: Agregar marcas de muestra para los últimos 5 días
+    marcas_creadas = 0
+    for dia_offset in range(5):
+        dia = hoy - timedelta(days=dia_offset)
+        ts_base = datetime.combine(dia, time(8, 0))
+        
+        for trab in trabajadores[:3]:  # primeros 3 trabajadores
+            entrada_ts = ts_base.replace(hour=8, minute=rnd.randint(0, 15))
+            salida_ts = ts_base.replace(hour=17, minute=rnd.randint(0, 30))
+            
+            sede = db.scalar(select(Sede).where(Sede.id == trab.sede_id))
+            if sede:
+                get_or_create(
+                    db,
+                    Marca,
+                    {"trabajador_id": trab.id, "ts_servidor": entrada_ts},
+                    tipo="entrada",
+                    lat=float(sede.lat) + rnd.uniform(-0.0001, 0.0001),
+                    lng=float(sede.lng) + rnd.uniform(-0.0001, 0.0001),
+                    distancia_m=rnd.uniform(5, 30),
+                    sede_id=sede.id,
+                    metodo="gps",
+                    validacion_estado="ok",
+                    sincronizado_offline=False,
+                )
+                marcas_creadas += 1
+                
+                get_or_create(
+                    db,
+                    Marca,
+                    {"trabajador_id": trab.id, "ts_servidor": salida_ts},
+                    tipo="salida",
+                    lat=float(sede.lat) + rnd.uniform(-0.0001, 0.0001),
+                    lng=float(sede.lng) + rnd.uniform(-0.0001, 0.0001),
+                    distancia_m=rnd.uniform(5, 30),
+                    sede_id=sede.id,
+                    metodo="gps",
+                    validacion_estado="ok",
+                    sincronizado_offline=False,
+                )
+                marcas_creadas += 1
+    
     db.commit()
-    print(f"Semilla OK: {n} trabajadores ficticios, usuarios demo: {', '.join(u.email for u in users.values())}")
+    print(f"Semilla OK: {n} trabajadores ficticios, {marcas_creadas} marcas de muestra, usuarios demo: {', '.join(u.email for u in users.values())}")
 
 
 if __name__ == "__main__":

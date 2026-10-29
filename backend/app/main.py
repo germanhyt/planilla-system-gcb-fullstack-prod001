@@ -2,10 +2,36 @@ from fastapi import FastAPI
 from sqlalchemy import text
 
 from .db import engine
-from .routers import auditoria, auth, bonos, horarios, maestros, marcas, reglas, regularizaciones
+from .routers import (
+    auditoria,
+    auth,
+    banco_horas,
+    bonos,
+    excepciones,
+    horarios,
+    maestros,
+    marcas,
+    periodos,
+    reglas,
+    regularizaciones,
+    reportes,
+)
 
-app = FastAPI(title="Sistema de Planillas GCB", version="0.2.0-sprint2")
-for rt in [auth.r, *maestros.routers, reglas.r, bonos.r, horarios.r, marcas.r, regularizaciones.r, auditoria.r]:
+app = FastAPI(title="Sistema de Planillas GCB", version="0.3.0-sprint3")
+for rt in [
+    auth.r,
+    *maestros.routers,
+    reglas.r,
+    bonos.r,
+    horarios.r,
+    marcas.r,
+    regularizaciones.r,
+    auditoria.r,
+    reportes.router,
+    periodos.router,
+    excepciones.router,
+    banco_horas.router,
+]:
     app.include_router(rt)
 
 

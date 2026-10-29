@@ -200,6 +200,7 @@ class Marca(Base):
     razon_manual: Mapped[Optional[str]] = mapped_column(Text)
     registrado_por: Mapped[Optional[int]] = mapped_column(ForeignKey("usuario.id"))
     validacion_estado: Mapped[str] = mapped_column(String(20), default="ok")  # ok|fuera_geocerca|duplicado
+    sincronizado_offline: Mapped[bool] = mapped_column(Boolean, default=False)  # Sprint 3: marca enviada desde cola offline
 
 
 class Asistencia(Base):
@@ -238,4 +239,50 @@ class RegularizacionHE(Base):
     decision_por: Mapped[Optional[int]] = mapped_column(ForeignKey("usuario.id"))
     decision_en: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     observacion: Mapped[Optional[str]] = mapped_column(Text)
+    creado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class CierrePeriodo(Base):
+    """Sprint 3: Cierre mensual de periodo contable con lock de recálculo."""
+    __tablename__ = "cierre_periodo"
+    __table_args__ = (UniqueConstraint("empresa_id", "periodo"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    empresa_id: Mapped[int] = mapped_column(ForeignKey("empresa.id"), index=True)
+    periodo: Mapped[str] = mapped_column(String(7), index=True)  # YYYY-MM
+    cerrado_por: Mapped[int] = mapped_column(ForeignKey("usuario.id"))
+    cerrado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    reabierto_por: Mapped[Optional[int]] = mapped_column(ForeignKey("usuario.id"))
+    reabierto_en: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    razon_reapertura: Mapped[Optional[str]] = mapped_column(Text)
+    estado: Mapped[str] = mapped_column(String(20), default="cerrado")  # cerrado|reabierto
+
+
+class FaltaJustificada(Base):
+    """Sprint 3: Justificación de faltas (ausencias) registrada por jefe/rrhh."""
+    __tablename__ = "falta_justificada"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    trabajador_id: Mapped[int] = mapped_column(ForeignKey("trabajador.id"), index=True)
+    dia: Mapped[date] = mapped_column(Date, index=True)
+    motivo: Mapped[str] = mapped_column(String(50))  # permiso|licencia_medica|vacaciones|otro
+    descripcion: Mapped[Optional[str]] = mapped_column(Text)
+    adjunto_url: Mapped[Optional[str]] = mapped_column(String(500))
+    justificado_por: Mapped[int] = mapped_column(ForeignKey("usuario.id"))
+    creado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class BancoHorasCompensatorias(Base):
+    """Sprint 3: Banco de horas compensatorias por trabajador."""
+    __tablename__ = "banco_horas_compensatorias"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    trabajador_id: Mapped[int] = mapped_column(ForeignKey("trabajador.id"), index=True)
+    fecha_movimiento: Mapped[date] = mapped_column(Date, index=True)
+    tipo: Mapped[str] = mapped_column(String(20))  # credito|debito
+    horas: Mapped[float] = mapped_column(Numeric(5, 2))
+    saldo_anterior: Mapped[float] = mapped_column(Numeric(6, 2))
+    saldo_nuevo: Mapped[float] = mapped_column(Numeric(6, 2))
+    origen: Mapped[str] = mapped_column(String(100))  # HE compensatoria aprobada / Descanso tomado / Expiración
+    regularizacion_id: Mapped[Optional[int]] = mapped_column(ForeignKey("regularizacion_he.id"))
+    asistencia_id: Mapped[Optional[int]] = mapped_column(ForeignKey("asistencia.id"))
+    dias_expiracion: Mapped[Optional[int]] = mapped_column(Integer)  # Días configurables para expirar
+    fecha_expira: Mapped[Optional[date]] = mapped_column(Date)
     creado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
