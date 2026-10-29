@@ -200,7 +200,14 @@ def test_r5_destino_compensacion_crea_credito(client, H, ids, db):
     """R5: Destino compensacion crea credito en banco horas."""
     from app.models import Asistencia, RegularizacionHE, Trabajador
     
-    trabajador = db.query(Trabajador).filter(Trabajador.codigo == "CAV-002").first()
+    trabajador = db.query(Trabajador).filter(Trabajador.codigo == "CAV-010").first()
+    if not trabajador:
+        trabajador = db.query(Trabajador).filter(Trabajador.codigo.like("CAV-%")).first()
+    
+    # Get saldo before
+    resp_antes = client.get(f"/banco-horas/saldo/{trabajador.id}", headers=H["admin"])
+    saldo_antes = resp_antes.json()["saldo_horas"]
+    
     asistencia = Asistencia(
         trabajador_id=trabajador.id,
         dia_operativo=date(2026, 10, 29),
@@ -231,9 +238,10 @@ def test_r5_destino_compensacion_crea_credito(client, H, ids, db):
     )
     assert resp.status_code == 200
     
-    # Verificar credito
+    # Verificar credito - should increase by 3.0
     resp_saldo = client.get(f"/banco-horas/saldo/{trabajador.id}", headers=H["admin"])
-    assert resp_saldo.json()["saldo_horas"] == 3.0
+    saldo_despues = resp_saldo.json()["saldo_horas"]
+    assert saldo_despues == saldo_antes + 3.0
 
 
 # ============================================================================
