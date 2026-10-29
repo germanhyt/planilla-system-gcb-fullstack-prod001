@@ -219,6 +219,70 @@ def test_registrar_marca_duplicada(client: TestClient, db, unique_id):
     assert "duplicado" in detail or "ya existe" in detail or "últimos 5 minutos" in detail
 
 
+def test_registrar_marca_payload_correcto(client: TestClient, db, unique_id):
+    """Regression test: verify correct JSON payload shape is accepted (not double-encoded)."""
+    empresa = Empresa(codigo=unique_id, razon_social=f"Test{unique_id}", ruc=f"20{unique_id[1:]}111")
+    db.add(empresa)
+    db.flush()
+    
+    unidad = Unidad(empresa_id=empresa.id, codigo="U1", nombre="Unidad 1")
+    db.add(unidad)
+    db.flush()
+    
+    tipo = TipoContrato(
+        codigo=f"FT{unique_id}",
+        nombre="Full Time",
+        horas_mes=208,
+        jornada_diaria_min=480,
+        es_part_time=False
+    )
+    db.add(tipo)
+    db.flush()
+    
+    usuario = Usuario(
+        email=f"{unique_id}test@test.com",
+        password_hash="hash",
+        rol="trabajador",
+        nombre="Test Worker"
+    )
+    db.add(usuario)
+    db.flush()
+    
+    trabajador = Trabajador(
+        codigo=f"W{unique_id}5",
+        empresa_id=empresa.id,
+        unidad_id=unidad.id,
+        doc_tipo="DNI",
+        doc_numero=f"{unique_id}99887766",
+        nombres="Carlos",
+        apellidos="Test",
+        tipo_contrato_id=tipo.id,
+        fecha_ingreso="2026-01-01",
+        usuario_id=usuario.id
+    )
+    db.add(trabajador)
+    db.commit()
+    
+    from app.security import create_token
+    token = create_token(usuario.id, usuario.rol)
+    
+    resp_correct = client.post(
+        "/marcas/",
+        json={"tipo": "entrada", "lat": -9.531119, "lng": -77.530517},
+        headers={"Authorization": f"Bearer {token}"}
+    )
+    assert resp_correct.status_code == 200, f"Correct payload should be accepted: {resp_correct.json()}"
+    
+    import json
+    double_encoded = json.dumps({"tipo": "salida", "lat": -9.531119, "lng": -77.530517})
+    resp_double = client.post(
+        "/marcas/",
+        json=double_encoded,
+        headers={"Authorization": f"Bearer {token}"}
+    )
+    assert resp_double.status_code == 422, "Double-encoded payload should be rejected"
+
+
 def test_registrar_marca_manual_jefe(client: TestClient, db, unique_id):
     """Test de marca manual por jefe."""
     empresa = Empresa(codigo=unique_id, razon_social=f"Test{unique_id}", ruc=f"20{unique_id[1:]}111")
