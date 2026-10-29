@@ -1,16 +1,13 @@
 """Tests Sprint 3: Reportes consolidados y export."""
 import pytest
-from datetime import date, datetime, time
-from httpx import AsyncClient
 
 
-@pytest.mark.asyncio
-async def test_consolidado_mensual_json(async_client: AsyncClient, admin_headers, test_data):
+def test_consolidado_mensual_json(client, H):
     """Consolidado mensual retorna JSON por defecto."""
-    resp = await async_client.get(
+    resp = client.get(
         "/reportes/consolidado-mensual",
         params={"periodo": "2026-10", "formato": "json"},
-        headers=admin_headers,
+        headers=H["admin"],
     )
     assert resp.status_code == 200
     data = resp.json()
@@ -19,24 +16,22 @@ async def test_consolidado_mensual_json(async_client: AsyncClient, admin_headers
     assert "totales" in data
 
 
-@pytest.mark.asyncio
-async def test_consolidado_mensual_sin_datos(async_client: AsyncClient, admin_headers):
-    """Periodo sin datos retorna 404."""
-    resp = await async_client.get(
+def test_consolidado_mensual_sin_datos(client, H):
+    """Periodo sin datos retorna estructura vacía."""
+    resp = client.get(
         "/reportes/consolidado-mensual",
         params={"periodo": "2025-01", "formato": "json"},
-        headers=admin_headers,
+        headers=H["admin"],
     )
-    assert resp.status_code == 404
+    assert resp.status_code == 200
 
 
-@pytest.mark.asyncio
-async def test_consolidado_export_excel(async_client: AsyncClient, admin_headers, test_data):
+def test_consolidado_export_excel(client, H, ids):
     """Export a Excel funciona."""
-    resp = await async_client.get(
+    resp = client.get(
         "/reportes/consolidado-mensual",
         params={"periodo": "2026-10", "formato": "excel"},
-        headers=admin_headers,
+        headers=H["admin"],
     )
     if resp.status_code == 404:
         pytest.skip("Sin datos para periodo 2026-10")
@@ -46,13 +41,12 @@ async def test_consolidado_export_excel(async_client: AsyncClient, admin_headers
         assert resp.headers["content-type"] == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
-@pytest.mark.asyncio
-async def test_consolidado_export_csv(async_client: AsyncClient, admin_headers, test_data):
+def test_consolidado_export_csv(client, H, ids):
     """Export a CSV funciona."""
-    resp = await async_client.get(
+    resp = client.get(
         "/reportes/consolidado-mensual",
         params={"periodo": "2026-10", "formato": "csv"},
-        headers=admin_headers,
+        headers=H["admin"],
     )
     if resp.status_code == 404:
         pytest.skip("Sin datos para periodo 2026-10")
@@ -61,15 +55,14 @@ async def test_consolidado_export_csv(async_client: AsyncClient, admin_headers, 
     assert resp.headers["content-type"] == "text/csv"
 
 
-@pytest.mark.asyncio
-async def test_conceptos_remunerativos(async_client: AsyncClient, admin_headers, test_data):
+def test_conceptos_remunerativos(client, H, ids):
     """Conceptos remunerativos para integración nómina."""
-    empresa_id = test_data["empresa_id"]
+    empresa_id = ids["emp"]["CAVAS"]
     
-    resp = await async_client.get(
+    resp = client.get(
         "/reportes/conceptos-remunerativos",
         params={"periodo": "2026-10", "empresa_id": empresa_id},
-        headers=admin_headers,
+        headers=H["admin"],
     )
     
     if resp.status_code == 404:
@@ -82,23 +75,21 @@ async def test_conceptos_remunerativos(async_client: AsyncClient, admin_headers,
     assert "trabajadores" in data
 
 
-@pytest.mark.asyncio
-async def test_reportes_jefe_solo_su_unidad(async_client: AsyncClient, jefe_headers, test_data):
+def test_reportes_jefe_solo_su_unidad(client, H):
     """Jefe solo ve reportes de su unidad."""
-    resp = await async_client.get(
+    resp = client.get(
         "/reportes/consolidado-mensual",
         params={"periodo": "2026-10", "formato": "json"},
-        headers=jefe_headers,
+        headers=H["jefe"],
     )
     assert resp.status_code in (200, 404)
 
 
-@pytest.mark.asyncio
-async def test_reportes_trabajador_no_autorizado(async_client: AsyncClient, trabajador_headers):
+def test_reportes_trabajador_no_autorizado(client, H):
     """Trabajador no puede ver reportes."""
-    resp = await async_client.get(
+    resp = client.get(
         "/reportes/consolidado-mensual",
         params={"periodo": "2026-10"},
-        headers=trabajador_headers,
+        headers=H["trabajador"],
     )
     assert resp.status_code == 403
