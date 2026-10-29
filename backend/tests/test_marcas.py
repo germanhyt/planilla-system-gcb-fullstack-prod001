@@ -60,8 +60,8 @@ def test_registrar_marca_gps(client: TestClient, db, H, unique_id):
     db.add(trabajador)
     db.commit()
     
-    from app.security import crear_token
-    token = crear_token(usuario.id)
+    from app.security import create_token
+    token = create_token(usuario.id, usuario.rol)
     
     resp = client.post(
         "/marcas/",
@@ -136,8 +136,8 @@ def test_registrar_marca_fuera_geocerca(client: TestClient, db, unique_id):
     db.add(trabajador)
     db.commit()
     
-    from app.security import crear_token
-    token = crear_token(usuario.id)
+    from app.security import create_token
+    token = create_token(usuario.id, usuario.rol)
     
     resp = client.post(
         "/marcas/",
@@ -199,8 +199,8 @@ def test_registrar_marca_duplicada(client: TestClient, db, unique_id):
     db.add(trabajador)
     db.commit()
     
-    from app.security import crear_token
-    token = crear_token(usuario.id)
+    from app.security import create_token
+    token = create_token(usuario.id, usuario.rol)
     
     resp1 = client.post(
         "/marcas/",
@@ -239,7 +239,7 @@ def test_registrar_marca_manual_jefe(client: TestClient, db, unique_id):
     db.flush()
     
     jefe = Usuario(
-        email="jefe@test.com",
+        email=f"{unique_id}jefe@test.com",
         password_hash="hash",
         rol="jefe",
         nombre="Jefe Test",
@@ -262,8 +262,8 @@ def test_registrar_marca_manual_jefe(client: TestClient, db, unique_id):
     db.add(trabajador)
     db.commit()
     
-    from app.security import crear_token
-    token = crear_token(jefe.id)
+    from app.security import create_token
+    token = create_token(jefe.id, jefe.rol)
     
     resp = client.post(
         "/marcas/manual",

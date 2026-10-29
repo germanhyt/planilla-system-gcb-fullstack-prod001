@@ -76,7 +76,7 @@ def test_listar_pendientes(client: TestClient, db, unique_id):
     db.flush()
     
     jefe = Usuario(
-        email="jefe@test.com",
+        email=f"{unique_id}jefe@test.com",
         password_hash="hash",
         rol="jefe",
         nombre="Jefe Test",
@@ -85,8 +85,8 @@ def test_listar_pendientes(client: TestClient, db, unique_id):
     db.add(jefe)
     db.commit()
     
-    from app.security import crear_token
-    token = crear_token(jefe.id)
+    from app.security import create_token
+    token = create_token(jefe.id, jefe.rol)
     
     resp = client.get(
         "/regularizaciones/",
@@ -179,8 +179,8 @@ def test_aprobar_regularizacion(client: TestClient, db, unique_id):
     db.add(jefe)
     db.commit()
     
-    from app.security import crear_token
-    token = crear_token(jefe.id)
+    from app.security import create_token
+    token = create_token(jefe.id, jefe.rol)
     
     resp = client.post(
         f"/regularizaciones/{reg.id}/decidir",
@@ -277,8 +277,8 @@ def test_rechazar_regularizacion(client: TestClient, db, unique_id):
     db.add(jefe)
     db.commit()
     
-    from app.security import crear_token
-    token = crear_token(jefe.id)
+    from app.security import create_token
+    token = create_token(jefe.id, jefe.rol)
     
     resp = client.post(
         f"/regularizaciones/{reg.id}/decidir",

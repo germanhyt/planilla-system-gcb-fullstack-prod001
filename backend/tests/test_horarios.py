@@ -51,7 +51,7 @@ def test_crear_horario_semanal(client: TestClient, db, unique_id):
     db.flush()
     
     jefe = Usuario(
-        email="jefe@test.com",
+        email=f"{unique_id}jefe@test.com",
         password_hash="hash",
         rol="jefe",
         nombre="Jefe Test",
@@ -60,8 +60,8 @@ def test_crear_horario_semanal(client: TestClient, db, unique_id):
     db.add(jefe)
     db.commit()
     
-    from app.security import crear_token
-    token = crear_token(jefe.id)
+    from app.security import create_token
+    token = create_token(jefe.id, jefe.rol)
     
     resp = client.post(
         "/horarios/",
@@ -137,8 +137,8 @@ def test_horario_alertas_exceso_horas(client: TestClient, db, unique_id):
     db.add(jefe)
     db.commit()
     
-    from app.security import crear_token
-    token = crear_token(jefe.id)
+    from app.security import create_token
+    token = create_token(jefe.id, jefe.rol)
     
     resp = client.post(
         "/horarios/",
@@ -230,8 +230,8 @@ def test_copiar_semana_anterior(client: TestClient, db, unique_id):
     db.add(plan_anterior)
     db.commit()
     
-    from app.security import crear_token
-    token = crear_token(jefe.id)
+    from app.security import create_token
+    token = create_token(jefe.id, jefe.rol)
     
     resp = client.post(
         f"/horarios/copiar-semana-anterior?trabajador_id={trabajador.id}&semana_inicio=2026-11-04",
