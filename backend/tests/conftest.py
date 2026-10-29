@@ -57,6 +57,32 @@ def ids(client, H):
     return {"emp": emp, "uni": uni, "tc": tc}
 
 
+_test_counter = 0
+
+
+@pytest.fixture
+def db():
+    """Database session for tests that need direct DB access."""
+    from app.db import SessionLocal
+    session = SessionLocal()
+    try:
+        yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
+@pytest.fixture
+def unique_id():
+    """Generate unique ID for test data to avoid conflicts."""
+    global _test_counter
+    _test_counter += 1
+    return f"T{_test_counter:06d}"
+
+
 @pytest.fixture
 def db():
     """Database session for tests that need direct DB access."""

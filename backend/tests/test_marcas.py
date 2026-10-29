@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 from app.models import Empresa, Sede, TipoContrato, Trabajador, Unidad, Usuario
 
 
-def test_registrar_marca_gps(client: TestClient, db, admin_token):
+def test_registrar_marca_gps(client: TestClient, db, H, unique_id):
     """Test de registro de marca con GPS."""
     empresa = Empresa(codigo=unique_id, razon_social=f"Test{unique_id}", ruc=f"20{unique_id[1:]}111")
     db.add(empresa)

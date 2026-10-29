@@ -139,7 +139,7 @@ def test_turno_cruza_medianoche(db: Session):
     assert reglas["dia_operativo"]["corte"] == "06:00"
 
 
-def test_calculo_asistencia_completo(db: Session):
+def test_calculo_asistencia_completo(db: Session, unique_id):
     """Test de cálculo completo de asistencia de un día."""
     empresa = Empresa(codigo=unique_id, razon_social=f"Test{unique_id}", ruc=f"20{unique_id[1:]}111")
     db.add(empresa)
