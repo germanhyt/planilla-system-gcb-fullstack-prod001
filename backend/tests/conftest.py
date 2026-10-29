@@ -7,7 +7,7 @@ from sqlalchemy.engine import make_url
 
 _base = make_url(os.environ.get("DATABASE_URL", "postgresql+psycopg://planilla:planilla@localhost:5432/planilla"))
 TEST_URL = os.environ.get("TEST_DATABASE_URL") or _base.set(database=f"{_base.database}_test").render_as_string(hide_password=False)
-os.environ["DATABASE_URL"] = TEST_URL  # antes de importar la app
+os.environ["DATABASE_URL"] = TEST_URL
 _t = make_url(TEST_URL)
 with psycopg.connect(host=_t.host, port=_t.port or 5432, user=_t.username, password=_t.password, dbname="postgres",
                      autocommit=True) as c:
@@ -55,3 +55,29 @@ def ids(client, H):
     uni = {u["codigo"]: u["id"] for u in client.get("/unidades", headers=H["admin"]).json()}
     tc = {t["codigo"]: t["id"] for t in client.get("/tipos-contrato", headers=H["admin"]).json()}
     return {"emp": emp, "uni": uni, "tc": tc}
+
+
+_test_counter = 0
+
+
+@pytest.fixture
+def db():
+    """Database session for tests that need direct DB access."""
+    from app.db import SessionLocal
+    session = SessionLocal()
+    try:
+        yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
+@pytest.fixture
+def unique_id():
+    """Generate unique ID for test data to avoid conflicts."""
+    global _test_counter
+    _test_counter += 1
+    return f"T{_test_counter:06d}"

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { api, getToken } from './api'
 import { Crud, Campo } from './Crud'
+import { Marcador } from './Marcador'
 
 const EMPRESA: Campo[] = [{ k: 'codigo', label: 'Código', req: true }, { k: 'razon_social', label: 'Razón social', req: true }, { k: 'ruc', label: 'RUC', req: true }]
 const UNIDAD: Campo[] = [{ k: 'empresa_id', label: 'Empresa', tipo: 'select', opciones: '/empresas', req: true }, { k: 'codigo', label: 'Código', req: true }, { k: 'nombre', label: 'Nombre', req: true }]
@@ -56,12 +57,14 @@ function App() {
   useEffect(() => { cargar() }, [])
   if (!getToken() || !me) return <Login onOk={cargar} />
   const r = me.rol; const admin = r === 'admin'; const rrhh = r === 'rrhh' || admin; const jefe = r === 'jefe' || rrhh
-  const menu: [string, string, boolean][] = [['perfil', 'Mi perfil', true], ['empresas', 'Empresas', jefe], ['unidades', 'Unidades', jefe], ['sedes', 'Sedes', jefe],
+  const trabajador = r === 'trabajador' || jefe
+  const menu: [string, string, boolean][] = [['perfil', 'Mi perfil', true], ['marcar', 'Marcar asistencia', trabajador], ['empresas', 'Empresas', jefe], ['unidades', 'Unidades', jefe], ['sedes', 'Sedes', jefe],
     ['contratos', 'Tipos de contrato', jefe], ['trabajadores', 'Trabajadores', jefe], ['reglas', 'Reglas', jefe]]
   return <div><nav>{menu.filter(m => m[2]).map(([k, l]) => <button key={k} className={vista === k ? 'act' : ''} onClick={() => setVista(k)}>{l}</button>)}
     <span>{me.nombre} ({r})</span><button onClick={() => { localStorage.removeItem('token'); location.reload() }}>Salir</button></nav>
     <main>
       {vista === 'perfil' && <Perfil me={me} recargar={cargar} />}
+      {vista === 'marcar' && <Marcador token={getToken()!} />}
       {vista === 'empresas' && <Crud titulo="Empresas" ruta="/empresas" campos={EMPRESA} puedeEscribir={admin} />}
       {vista === 'unidades' && <Crud titulo="Unidades" ruta="/unidades" campos={UNIDAD} puedeEscribir={admin} />}
       {vista === 'sedes' && <Crud titulo="Sedes" ruta="/sedes" campos={SEDE} puedeEscribir={admin} />}

@@ -161,3 +161,81 @@ class Auditoria(Base):
     antes: Mapped[Optional[dict]] = mapped_column(JSONT)
     despues: Mapped[Optional[dict]] = mapped_column(JSONT)
     ip: Mapped[Optional[str]] = mapped_column(String(64))
+
+
+class HorarioPlan(Base):
+    """Plan de horario semanal versionado por trabajador. Cada cambio = nueva versión."""
+    __tablename__ = "horario_plan"
+    __table_args__ = (UniqueConstraint("trabajador_id", "semana_inicio", "version"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    trabajador_id: Mapped[int] = mapped_column(ForeignKey("trabajador.id"), index=True)
+    semana_inicio: Mapped[date] = mapped_column(Date, index=True)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    lunes_plantilla_id: Mapped[Optional[int]] = mapped_column(ForeignKey("turno_plantilla.id"))
+    martes_plantilla_id: Mapped[Optional[int]] = mapped_column(ForeignKey("turno_plantilla.id"))
+    miercoles_plantilla_id: Mapped[Optional[int]] = mapped_column(ForeignKey("turno_plantilla.id"))
+    jueves_plantilla_id: Mapped[Optional[int]] = mapped_column(ForeignKey("turno_plantilla.id"))
+    viernes_plantilla_id: Mapped[Optional[int]] = mapped_column(ForeignKey("turno_plantilla.id"))
+    sabado_plantilla_id: Mapped[Optional[int]] = mapped_column(ForeignKey("turno_plantilla.id"))
+    domingo_plantilla_id: Mapped[Optional[int]] = mapped_column(ForeignKey("turno_plantilla.id"))
+    alertas: Mapped[Optional[dict]] = mapped_column(JSONT)
+    creado_por: Mapped[int] = mapped_column(ForeignKey("usuario.id"))
+    creado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Marca(Base):
+    """Check-in/out con validación GPS y QR. Server time autoritativo."""
+    __tablename__ = "marca"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    trabajador_id: Mapped[int] = mapped_column(ForeignKey("trabajador.id"), index=True)
+    tipo: Mapped[str] = mapped_column(String(10))  # entrada|salida
+    ts_servidor: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+    ts_cliente: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    lat: Mapped[Optional[float]] = mapped_column(Numeric(9, 6))
+    lng: Mapped[Optional[float]] = mapped_column(Numeric(9, 6))
+    distancia_m: Mapped[Optional[float]] = mapped_column(Numeric(8, 2))
+    sede_id: Mapped[Optional[int]] = mapped_column(ForeignKey("sede.id"))
+    metodo: Mapped[str] = mapped_column(String(20))  # gps|manual
+    qr_code: Mapped[Optional[str]] = mapped_column(String(100))
+    razon_manual: Mapped[Optional[str]] = mapped_column(Text)
+    registrado_por: Mapped[Optional[int]] = mapped_column(ForeignKey("usuario.id"))
+    validacion_estado: Mapped[str] = mapped_column(String(20), default="ok")  # ok|fuera_geocerca|duplicado
+
+
+class Asistencia(Base):
+    """Cálculo diario del motor de asistencia. Periodo cerrado = inmutable."""
+    __tablename__ = "asistencia"
+    __table_args__ = (UniqueConstraint("trabajador_id", "dia_operativo"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    trabajador_id: Mapped[int] = mapped_column(ForeignKey("trabajador.id"), index=True)
+    dia_operativo: Mapped[date] = mapped_column(Date, index=True)
+    periodo: Mapped[str] = mapped_column(String(7), index=True)  # YYYY-MM del periodo operativo
+    turno_plantilla_id: Mapped[Optional[int]] = mapped_column(ForeignKey("turno_plantilla.id"))
+    entrada_marca_id: Mapped[Optional[int]] = mapped_column(ForeignKey("marca.id"))
+    salida_marca_id: Mapped[Optional[int]] = mapped_column(ForeignKey("marca.id"))
+    horas_programadas: Mapped[Optional[float]] = mapped_column(Numeric(5, 2))
+    horas_trabajadas: Mapped[Optional[float]] = mapped_column(Numeric(5, 2))
+    tardanza_min: Mapped[int] = mapped_column(Integer, default=0)
+    horas_extra_programadas: Mapped[Optional[float]] = mapped_column(Numeric(5, 2))
+    horas_extra_25: Mapped[float] = mapped_column(Numeric(5, 2), default=0)
+    horas_extra_35: Mapped[float] = mapped_column(Numeric(5, 2), default=0)
+    horas_nocturnas: Mapped[float] = mapped_column(Numeric(5, 2), default=0)
+    exceso_no_programado: Mapped[float] = mapped_column(Numeric(5, 2), default=0)
+    rule_set_id: Mapped[int] = mapped_column(ForeignKey("rule_set.id"))
+    periodo_cerrado: Mapped[bool] = mapped_column(Boolean, default=False)
+    calculado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class RegularizacionHE(Base):
+    """Bandeja del jefe: exceso no programado para regularizar."""
+    __tablename__ = "regularizacion_he"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    asistencia_id: Mapped[int] = mapped_column(ForeignKey("asistencia.id"), index=True)
+    trabajador_id: Mapped[int] = mapped_column(ForeignKey("trabajador.id"), index=True)
+    horas_exceso: Mapped[float] = mapped_column(Numeric(5, 2))
+    estado: Mapped[str] = mapped_column(String(20), default="pendiente")  # pendiente|aprobado|rechazado
+    destino: Mapped[Optional[str]] = mapped_column(String(20))  # pago|compensacion|mixto
+    decision_por: Mapped[Optional[int]] = mapped_column(ForeignKey("usuario.id"))
+    decision_en: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    observacion: Mapped[Optional[str]] = mapped_column(Text)
+    creado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
