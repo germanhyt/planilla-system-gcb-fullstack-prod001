@@ -4,12 +4,12 @@ from io import BytesIO
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from sqlalchemy import and_, func, select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import and_, func
+from sqlalchemy.orm import Session
 
-from ..audit import auditar
+from ..audit import audit
 from ..db import get_db
-from ..deps import get_current_user
+from ..deps import current_user, require
 from ..models import Asistencia, BonoNocturno, Empresa, Marca, Trabajador, TurnoPlantilla, Unidad, Usuario
 
 router = APIRouter(prefix="/reportes", tags=["reportes"])
