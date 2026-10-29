@@ -1,7 +1,6 @@
 """Tests de API de regularización de HE. Sprint 2."""
 from datetime import date
 
-import pytest
 from fastapi.testclient import TestClient
 
 from app.models import Asistencia, Empresa, RegularizacionHE, RuleSet, Trabajador, TipoContrato, Unidad, Usuario

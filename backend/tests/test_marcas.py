@@ -1,7 +1,4 @@
 """Tests de API de marcas (check-in/out). Sprint 2."""
-from datetime import datetime
-
-import pytest
 from fastapi.testclient import TestClient
 
 from app.models import Empresa, Sede, Trabajador, TipoContrato, Unidad, Usuario

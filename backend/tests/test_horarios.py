@@ -1,7 +1,6 @@
 """Tests de API de horarios semanales. Sprint 2."""
 from datetime import date
 
-import pytest
 from fastapi.testclient import TestClient
 
 from app.models import Empresa, Trabajador, TipoContrato, TurnoPlantilla, Unidad, Usuario

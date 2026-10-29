@@ -1,7 +1,6 @@
 """Tests del motor de cálculo de asistencia. Sprint 2."""
 from datetime import date, datetime, time, timedelta
 
-import pytest
 from sqlalchemy.orm import Session
 
 from app.engine import (
