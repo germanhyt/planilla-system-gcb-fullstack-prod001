@@ -106,7 +106,7 @@ def decidir_regularizacion(
                 ).order_by(BancoHorasCompensatorias.creado_en.desc()).first()
                 
                 saldo_anterior = float(ultimo.saldo_nuevo) if ultimo else 0.0
-                saldo_nuevo = saldo_anterior + reg.horas_exceso
+                saldo_nuevo = saldo_anterior + float(reg.horas_exceso)
                 
                 # Configurar expiración: 90 días por defecto
                 dias_expiracion = 90
@@ -116,7 +116,7 @@ def decidir_regularizacion(
                     trabajador_id=trabajador.id,
                     fecha_movimiento=asistencia.dia_operativo,
                     tipo="credito",
-                    horas=reg.horas_exceso,
+                    horas=float(reg.horas_exceso),
                     saldo_anterior=saldo_anterior,
                     saldo_nuevo=saldo_nuevo,
                     origen=f"HE compensatoria aprobada (reg #{reg.id})",
@@ -129,8 +129,8 @@ def decidir_regularizacion(
             
             elif decision.destino == "mixto":
                 # 50% a pago, 50% a compensación
-                horas_pago = reg.horas_exceso / 2
-                horas_comp = reg.horas_exceso / 2
+                horas_pago = float(reg.horas_exceso) / 2
+                horas_comp = float(reg.horas_exceso) / 2
                 
                 # Pago
                 if horas_pago <= 2:

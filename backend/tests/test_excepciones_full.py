@@ -5,7 +5,7 @@ from datetime import date, timedelta
 
 def test_faltas_sin_justificar_detecta_ausencias(client, H, ids, db):
     """Detecta dias programados sin asistencia."""
-    from app.models import HorarioPlan, Trabajador, TurnoPlantilla
+    from app.models import HorarioPlan, Trabajador, TurnoPlantilla, Usuario
     
     trabajador = db.query(Trabajador).filter(Trabajador.codigo == "CAV-006").first()
     if not trabajador:
@@ -16,6 +16,11 @@ def test_faltas_sin_justificar_detecta_ausencias(client, H, ids, db):
     if not turno:
         pytest.skip("No hay turnos plantilla")
     
+    # Obtener un usuario para creado_por
+    usuario = db.query(Usuario).first()
+    if not usuario:
+        pytest.skip("No hay usuarios en BD")
+    
     fecha_inicio_semana = date(2026, 10, 20) - timedelta(days=date(2026, 10, 20).weekday())
     plan = HorarioPlan(
         trabajador_id=trabajador.id,
@@ -23,7 +28,8 @@ def test_faltas_sin_justificar_detecta_ausencias(client, H, ids, db):
         version=1,
         lunes_plantilla_id=turno.id,
         martes_plantilla_id=turno.id,
-        miercoles_plantilla_id=turno.id
+        miercoles_plantilla_id=turno.id,
+        creado_por=usuario.id
     )
     db.add(plan)
     db.commit()
@@ -82,6 +88,7 @@ def test_tardanzas_recurrentes_detecta_patron(client, H, ids, db):
 def test_marcas_fuera_geocerca(client, H, ids, db):
     """Detecta marcas fuera de rango permitido."""
     from app.models import Marca, Trabajador
+    from datetime import datetime
     
     trabajador = db.query(Trabajador).filter(Trabajador.codigo == "CAV-008").first()
     if not trabajador:
@@ -91,11 +98,12 @@ def test_marcas_fuera_geocerca(client, H, ids, db):
     marca = Marca(
         trabajador_id=trabajador.id,
         tipo="entrada",
-        ts_servidor=date.today(),
+        ts_servidor=datetime.now(),
         lat=-12.1,
         lng=-77.0,
-        distancia_metros=500,
-        validacion_estado="ok"
+        distancia_m=500,
+        validacion_estado="ok",
+        metodo="gps"
     )
     db.add(marca)
     db.commit()

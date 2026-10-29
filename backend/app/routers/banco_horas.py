@@ -205,7 +205,7 @@ def registrar_descanso(
             fecha=data.fecha,
             tipo="debito",
             horas=data.horas,
-            origen=f"Descanso compensatorio tomado - registrado por {user.username}",
+            origen=f"Descanso compensatorio tomado - registrado por {user.email}",
             asistencia_id=data.asistencia_id
         )
         db.commit()
