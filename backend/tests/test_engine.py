@@ -161,7 +161,7 @@ def test_calculo_asistencia_completo(db: Session, unique_id):
     db.flush()
     
     trabajador = Trabajador(
-        codigo="T001",
+        codigo=f"W{unique_id}1",
         empresa_id=empresa.id,
         unidad_id=unidad.id,
         doc_tipo="DNI",

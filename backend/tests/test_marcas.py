@@ -45,7 +45,7 @@ def test_registrar_marca_gps(client: TestClient, db, H, unique_id):
     db.flush()
     
     trabajador = Trabajador(
-        codigo="T001",
+        codigo=f"W{unique_id}1",
         empresa_id=empresa.id,
         unidad_id=unidad.id,
         sede_id=sede.id,
@@ -121,7 +121,7 @@ def test_registrar_marca_fuera_geocerca(client: TestClient, db, unique_id):
     db.flush()
     
     trabajador = Trabajador(
-        codigo="T002",
+        codigo=f"W{unique_id}2",
         empresa_id=empresa.id,
         unidad_id=unidad.id,
         sede_id=sede.id,
@@ -185,7 +185,7 @@ def test_registrar_marca_duplicada(client: TestClient, db, unique_id):
     db.flush()
     
     trabajador = Trabajador(
-        codigo="T003",
+        codigo=f"W{unique_id}3",
         empresa_id=empresa.id,
         unidad_id=unidad.id,
         doc_tipo="DNI",
@@ -249,7 +249,7 @@ def test_registrar_marca_manual_jefe(client: TestClient, db, unique_id):
     db.flush()
     
     trabajador = Trabajador(
-        codigo="T004",
+        codigo=f"W{unique_id}4",
         empresa_id=empresa.id,
         unidad_id=unidad.id,
         doc_tipo="DNI",

@@ -27,7 +27,7 @@ def test_crear_horario_semanal(client: TestClient, db, unique_id):
     db.flush()
     
     trabajador = Trabajador(
-        codigo="T001",
+        codigo=f"W{unique_id}1",
         empresa_id=empresa.id,
         unidad_id=unidad.id,
         doc_tipo="DNI",
@@ -104,7 +104,7 @@ def test_horario_alertas_exceso_horas(client: TestClient, db, unique_id):
     db.flush()
     
     trabajador = Trabajador(
-        codigo="T002",
+        codigo=f"W{unique_id}2",
         empresa_id=empresa.id,
         unidad_id=unidad.id,
         doc_tipo="DNI",
@@ -182,7 +182,7 @@ def test_copiar_semana_anterior(client: TestClient, db, unique_id):
     db.flush()
     
     trabajador = Trabajador(
-        codigo="T003",
+        codigo=f"W{unique_id}3",
         empresa_id=empresa.id,
         unidad_id=unidad.id,
         doc_tipo="DNI",

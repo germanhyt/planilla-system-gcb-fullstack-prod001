@@ -27,7 +27,7 @@ def test_listar_pendientes(client: TestClient, db, unique_id):
     db.flush()
     
     trabajador = Trabajador(
-        codigo="T001",
+        codigo=f"W{unique_id}1",
         empresa_id=empresa.id,
         unidad_id=unidad.id,
         doc_tipo="DNI",
@@ -121,7 +121,7 @@ def test_aprobar_regularizacion(client: TestClient, db, unique_id):
     db.flush()
     
     trabajador = Trabajador(
-        codigo="T002",
+        codigo=f"W{unique_id}2",
         empresa_id=empresa.id,
         unidad_id=unidad.id,
         doc_tipo="DNI",
@@ -219,7 +219,7 @@ def test_rechazar_regularizacion(client: TestClient, db, unique_id):
     db.flush()
     
     trabajador = Trabajador(
-        codigo="T003",
+        codigo=f"W{unique_id}3",
         empresa_id=empresa.id,
         unidad_id=unidad.id,
         doc_tipo="DNI",
