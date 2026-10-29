@@ -36,23 +36,31 @@ export function Marcador({ token }: MarcadorProps) {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify({
+        body: {
           tipo,
           lat: position.coords.latitude,
           lng: position.coords.longitude,
           ts_cliente: new Date().toISOString()
-        })
+        }
       });
 
       const data = await resp.json();
 
       if (!resp.ok) {
-        throw new Error(data.detail || "Error al registrar marca");
+        const errorMsg = typeof data.detail === 'string' 
+          ? data.detail 
+          : data.detail?.msg || "Error al registrar marca";
+        throw new Error(errorMsg);
       }
 
       setResultado(data);
     } catch (err: any) {
-      setError(err.message || "Error al obtener ubicación");
+      const friendlyError = err.message === "Failed to fetch"
+        ? "No se pudo conectar con el servidor"
+        : err.message.includes("User denied Geolocation")
+        ? "Debe permitir el acceso a la ubicación"
+        : err.message || "Error al obtener ubicación";
+      setError(friendlyError);
     } finally {
       setLoading(false);
     }
@@ -70,22 +78,28 @@ export function Marcador({ token }: MarcadorProps) {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify({
+        body: {
           tipo,
           qr_code: code,
           ts_cliente: new Date().toISOString()
-        })
+        }
       });
 
       const data = await resp.json();
 
       if (!resp.ok) {
-        throw new Error(data.detail || "Error al registrar marca");
+        const errorMsg = typeof data.detail === 'string' 
+          ? data.detail 
+          : data.detail?.msg || "Error al registrar marca con QR";
+        throw new Error(errorMsg);
       }
 
       setResultado(data);
     } catch (err: any) {
-      setError(err.message);
+      const friendlyError = err.message === "Failed to fetch"
+        ? "No se pudo conectar con el servidor"
+        : err.message || "Error al escanear código QR";
+      setError(friendlyError);
     } finally {
       setLoading(false);
     }
