@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from ..audit import audit
 from ..db import get_db
-from ..deps import require_role
+from ..deps import require
 from ..models import Marca, Sede, Trabajador, Usuario
 from ..schemas import MarcaIn, MarcaManualIn
 
@@ -65,7 +65,7 @@ def verificar_duplicado(db: Session, trabajador_id: int, tipo: str, ventana_min:
 
 
 @r.post("/")
-def registrar_marca(marca_in: MarcaIn, request: Request, db: Session = Depends(get_db), u: Usuario = Depends(require_role("trabajador"))):
+def registrar_marca(marca_in: MarcaIn, request: Request, db: Session = Depends(get_db), u: Usuario = Depends(require("trabajador", "jefe", "rrhh", "admin"))):
     trabajador = db.query(Trabajador).filter(Trabajador.usuario_id == u.id).first()
     if not trabajador:
         raise HTTPException(403, "Usuario no vinculado a trabajador")
@@ -120,7 +120,7 @@ def registrar_marca_manual(
     marca_in: MarcaManualIn,
     request: Request,
     db: Session = Depends(get_db),
-    u: Usuario = Depends(require_role("jefe"))
+    u: Usuario = Depends(require("jefe", "rrhh", "admin"))
 ):
     trabajador = db.query(Trabajador).get(marca_in.trabajador_id)
     if not trabajador:
@@ -161,7 +161,7 @@ def listar_marcas(
     fecha_inicio: str = None,
     fecha_fin: str = None,
     db: Session = Depends(get_db),
-    u: Usuario = Depends(require_role("trabajador"))
+    u: Usuario = Depends(require("trabajador", "jefe", "rrhh", "admin"))
 ):
     trabajador = db.query(Trabajador).get(trabajador_id)
     if not trabajador:

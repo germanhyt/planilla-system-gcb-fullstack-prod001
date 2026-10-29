@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from ..audit import audit
 from ..db import get_db
-from ..deps import require_role
+from ..deps import require
 from ..models import HorarioPlan, Trabajador, TurnoPlantilla, Usuario
 from ..schemas import HorarioPlanIn
 
@@ -61,7 +61,7 @@ def validar_alertas(db: Session, plan_in: HorarioPlanIn) -> dict:
 
 
 @r.post("/")
-def crear_horario(plan_in: HorarioPlanIn, db: Session = Depends(get_db), u: Usuario = Depends(require_role("jefe"))):
+def crear_horario(plan_in: HorarioPlanIn, db: Session = Depends(get_db), u: Usuario = Depends(require("jefe", "rrhh", "admin"))):
     trabajador = db.query(Trabajador).get(plan_in.trabajador_id)
     if not trabajador:
         raise HTTPException(404, "Trabajador no encontrado")
@@ -112,7 +112,7 @@ def crear_horario(plan_in: HorarioPlanIn, db: Session = Depends(get_db), u: Usua
 
 
 @r.get("/trabajador/{trabajador_id}")
-def listar_horarios(trabajador_id: int, db: Session = Depends(get_db), u: Usuario = Depends(require_role("trabajador"))):
+def listar_horarios(trabajador_id: int, db: Session = Depends(get_db), u: Usuario = Depends(require("trabajador", "jefe", "rrhh", "admin"))):
     trabajador = db.query(Trabajador).get(trabajador_id)
     if not trabajador:
         raise HTTPException(404, "Trabajador no encontrado")
@@ -131,7 +131,7 @@ def listar_horarios(trabajador_id: int, db: Session = Depends(get_db), u: Usuari
 
 
 @r.post("/copiar-semana-anterior")
-def copiar_semana_anterior(trabajador_id: int, semana_inicio: date, db: Session = Depends(get_db), u: Usuario = Depends(require_role("jefe"))):
+def copiar_semana_anterior(trabajador_id: int, semana_inicio: date, db: Session = Depends(get_db), u: Usuario = Depends(require("jefe", "rrhh", "admin"))):
     trabajador = db.query(Trabajador).get(trabajador_id)
     if not trabajador:
         raise HTTPException(404, "Trabajador no encontrado")

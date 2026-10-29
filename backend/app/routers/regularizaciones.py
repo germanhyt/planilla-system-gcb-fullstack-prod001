@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from ..audit import audit
 from ..db import get_db
-from ..deps import require_role
+from ..deps import require
 from ..models import Asistencia, RegularizacionHE, Trabajador, Usuario
 from ..schemas import RegularizacionDecision
 
@@ -15,7 +15,7 @@ r = APIRouter(prefix="/regularizaciones", tags=["regularizaciones"])
 
 
 @r.get("/")
-def listar_pendientes(db: Session = Depends(get_db), u: Usuario = Depends(require_role("jefe"))):
+def listar_pendientes(db: Session = Depends(get_db), u: Usuario = Depends(require("jefe", "rrhh", "admin"))):
     """Lista las regularizaciones pendientes para la unidad del jefe."""
     query = db.query(RegularizacionHE).join(Trabajador).filter(
         RegularizacionHE.estado == "pendiente"
@@ -53,7 +53,7 @@ def decidir_regularizacion(
     reg_id: int,
     decision: RegularizacionDecision,
     db: Session = Depends(get_db),
-    u: Usuario = Depends(require_role("jefe"))
+    u: Usuario = Depends(require("jefe", "rrhh", "admin"))
 ):
     """Aprueba o rechaza una regularización de horas extra."""
     reg = db.query(RegularizacionHE).get(reg_id)
@@ -113,7 +113,7 @@ def decidir_regularizacion(
 def listar_por_trabajador(
     trabajador_id: int,
     db: Session = Depends(get_db),
-    u: Usuario = Depends(require_role("trabajador"))
+    u: Usuario = Depends(require("trabajador", "jefe", "rrhh", "admin"))
 ):
     """Lista el historial de regularizaciones de un trabajador."""
     trabajador = db.query(Trabajador).get(trabajador_id)
