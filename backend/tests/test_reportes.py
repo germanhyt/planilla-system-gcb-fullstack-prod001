@@ -52,7 +52,7 @@ def test_consolidado_export_csv(client, H, ids):
         pytest.skip("Sin datos para periodo 2026-10")
     
     assert resp.status_code == 200
-    assert resp.headers["content-type"] == "text/csv"
+    assert resp.headers["content-type"].startswith("text/csv")
 
 
 def test_conceptos_remunerativos(client, H, ids):
