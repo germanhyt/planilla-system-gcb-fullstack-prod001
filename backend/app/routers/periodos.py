@@ -1,5 +1,6 @@
 """Sprint 3: Cierre y reapertura de periodos contables."""
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..audit import audit
@@ -105,7 +106,7 @@ def reabrir_periodo(
     # Actualizar el cierre existente
     cierre.estado = "reabierto"
     cierre.reabierto_por = user.id
-    cierre.reabierto_en = db.execute("SELECT NOW()").scalar()
+    cierre.reabierto_en = db.execute(text("SELECT NOW()")).scalar()
     cierre.razon_reapertura = data.razon_reapertura
     
     # Desmarcar asistencias como cerradas para permitir recálculo

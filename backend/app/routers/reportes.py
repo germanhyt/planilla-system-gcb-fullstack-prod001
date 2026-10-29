@@ -1,5 +1,5 @@
 """Sprint 3: Reportes consolidados y export a Excel/CSV."""
-from io import BytesIO
+from io import BytesIO, StringIO
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -186,7 +186,7 @@ def consolidado_mensual(
     
     elif formato == "csv":
         import csv
-        output = BytesIO()
+        output = StringIO()
         
         # Escribir CSV en memoria
         writer = csv.writer(output)
@@ -212,7 +212,7 @@ def consolidado_mensual(
         
         output.seek(0)
         return Response(
-            content=output.getvalue().decode("utf-8"),
+            content=output.getvalue(),
             media_type="text/csv",
             headers={
                 "Content-Disposition": f"attachment; filename=consolidado_{periodo}.csv"
