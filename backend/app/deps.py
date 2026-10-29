@@ -22,6 +22,11 @@ def current_user(cred: HTTPAuthorizationCredentials = Depends(bearer), db: Sessi
     return u
 
 
+def get_current_user(cred: HTTPAuthorizationCredentials = Depends(bearer), db: Session = Depends(get_db)) -> Usuario:
+    """Alias for current_user to maintain compatibility."""
+    return current_user(cred, db)
+
+
 def require(*roles: str):
     """RBAC: la ruta solo es accesible para los roles indicados."""
     def dep(u: Usuario = Depends(current_user)) -> Usuario:

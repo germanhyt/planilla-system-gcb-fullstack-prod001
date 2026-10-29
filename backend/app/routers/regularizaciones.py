@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from ..audit import audit
 from ..db import get_db
-from ..deps import require
+from ..deps import current_user
 from ..models import Asistencia, RegularizacionHE, Trabajador, Usuario
 from ..schemas import RegularizacionDecision
 
@@ -14,13 +14,18 @@ r = APIRouter(prefix="/regularizaciones", tags=["regularizaciones"])
 
 
 @r.get("/")
-def listar_pendientes(db: Session = Depends(get_db), u: Usuario = Depends(require("jefe", "rrhh", "admin"))):
+def listar_pendientes(db: Session = Depends(get_db), u: Usuario = Depends(current_user)):
     """Lista las regularizaciones pendientes para la unidad del jefe."""
+    if u.rol not in ("jefe", "rrhh", "admin"):
+        raise HTTPException(403, "No autorizado")
+    
     query = db.query(RegularizacionHE).join(Trabajador).filter(
         RegularizacionHE.estado == "pendiente"
     )
     
     if u.rol == "jefe":
+        if not u.unidad_id:
+            raise HTTPException(403, "Jefe sin unidad asignada")
         query = query.filter(Trabajador.unidad_id == u.unidad_id)
     
     regs = query.order_by(RegularizacionHE.creado_en.desc()).limit(100).all()
@@ -52,9 +57,12 @@ def decidir_regularizacion(
     reg_id: int,
     decision: RegularizacionDecision,
     db: Session = Depends(get_db),
-    u: Usuario = Depends(require("jefe", "rrhh", "admin"))
+    u: Usuario = Depends(current_user)
 ):
     """Aprueba o rechaza una regularización de horas extra."""
+    if u.rol not in ("jefe", "rrhh", "admin"):
+        raise HTTPException(403, "No autorizado")
+    
     reg = db.query(RegularizacionHE).get(reg_id)
     if not reg:
         raise HTTPException(404, "Regularización no encontrada")
@@ -112,7 +120,7 @@ def decidir_regularizacion(
 def listar_por_trabajador(
     trabajador_id: int,
     db: Session = Depends(get_db),
-    u: Usuario = Depends(require("trabajador", "jefe", "rrhh", "admin"))
+    u: Usuario = Depends(current_user)
 ):
     """Lista el historial de regularizaciones de un trabajador."""
     trabajador = db.query(Trabajador).get(trabajador_id)

@@ -153,3 +153,32 @@ class RegularizacionDecision(BaseModel):
     aprobar: bool
     destino: Optional[Literal["pago", "compensacion", "mixto"]] = None
     observacion: Optional[str] = None
+
+
+class CierrePeriodoIn(BaseModel):
+    """Sprint 3: Cerrar periodo mensual."""
+    empresa_id: int
+    periodo: str = Field(pattern=r"^\d{4}-(0[1-9]|1[0-2])$")
+
+
+class ReaperturaPeriodoIn(BaseModel):
+    """Sprint 3: Reabrir periodo cerrado (solo admin)."""
+    razon_reapertura: str = Field(min_length=10)
+
+
+class FaltaJustificadaIn(BaseModel):
+    """Sprint 3: Justificar falta/ausencia."""
+    trabajador_id: int
+    dia: date
+    motivo: Literal["permiso", "licencia_medica", "vacaciones", "otro"]
+    descripcion: Optional[str] = None
+    adjunto_url: Optional[str] = None
+
+
+class ConsolidadoMensualParams(BaseModel):
+    """Sprint 3: Parámetros para reporte consolidado mensual."""
+    periodo: str = Field(pattern=r"^\d{4}-(0[1-9]|1[0-2])$")
+    empresa_id: Optional[int] = None
+    unidad_id: Optional[int] = None
+    trabajador_id: Optional[int] = None
+    formato: Literal["json", "excel", "csv"] = "json"
