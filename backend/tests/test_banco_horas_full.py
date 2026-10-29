@@ -1,5 +1,4 @@
 """Tests completos Sprint 3: Banco de horas compensatorias."""
-import pytest
 from datetime import date, timedelta
 
 
@@ -104,7 +103,7 @@ def test_credito_mixto_50_50(client, H, ids, db):
 
 def test_debito_descanso_reduce_saldo(client, H, ids, db):
     """Registrar descanso tomado reduce el saldo."""
-    from app.models import Asistencia, BancoHorasCompensatorias, RegularizacionHE, Trabajador
+    from app.models import Asistencia, RegularizacionHE, Trabajador
     
     trabajador = db.query(Trabajador).filter(Trabajador.codigo == "CAV-003").first()
     
@@ -224,10 +223,9 @@ def test_expiraciones_proximas(client, H, ids, db):
 
 def test_trabajador_solo_ve_su_saldo(client, H, ids, db):
     """Trabajador solo puede consultar su propio saldo."""
-    from app.models import Trabajador
     
     # CAV-001 es el trabajador del token trabajador
-    resp_propio = client.get("/banco-horas/saldo/1", headers=H["trabajador"])
+    # resp_propio = client.get("/banco-horas/saldo/1", headers=H["trabajador"])
     # Deberia funcionar si el trabajador con el token es id=1
     # Si falla con 403, es porque el trabajador no es id=1
     # Ajustamos: usemos otro trabajador

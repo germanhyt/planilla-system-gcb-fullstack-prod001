@@ -130,7 +130,6 @@ def decidir_regularizacion(
             
             elif decision.destino == "mixto":
                 # 50% a pago, 50% a compensación
-                from decimal import Decimal
                 horas_pago = float(reg.horas_exceso) / 2
                 horas_comp = float(reg.horas_exceso) / 2
                 

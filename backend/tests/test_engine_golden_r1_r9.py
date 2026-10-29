@@ -1,23 +1,20 @@
 """Golden tests R1-R9: Motor de calculo completo con casos CAVAS anonimizados."""
+from datetime import date, datetime, time
+
 import pytest
-from datetime import date, datetime, time, timedelta
+
 from app.engine import (
-    calcular_asistencia_dia,
     calcular_distancia,
     calcular_horas_extra,
     calcular_horas_nocturnas,
     calcular_horas_trabajadas,
     calcular_tardanza,
     get_dia_operativo,
-    get_horario_plan_version,
     get_periodo_operativo,
-    get_rule_set_vigente,
-    get_turno_plantilla_dia,
     minutes_to_hours,
     parse_time,
-    time_to_minutes
+    time_to_minutes,
 )
-
 
 # ============================================================================
 # R1: Umbral de tolerancia (CAVAS 10 min, GCB SA 0)
@@ -321,7 +318,6 @@ def test_r8_trabajador_no_ve_reportes(client, H):
 
 def test_r8_jefe_ve_solo_su_unidad(client, H, db):
     """R8: Jefe solo ve datos de su unidad."""
-    from app.models import Trabajador
     
     # Intentar ver trabajador de otra unidad deberia fallar
     resp = client.get("/banco-horas/saldo/999", headers=H["jefe"])

@@ -1,6 +1,7 @@
 """Tests completos Sprint 3: Dashboard de excepciones."""
-import pytest
 from datetime import date, timedelta
+
+import pytest
 
 
 def test_faltas_sin_justificar_detecta_ausencias(client, H, ids, db):
@@ -87,8 +88,9 @@ def test_tardanzas_recurrentes_detecta_patron(client, H, ids, db):
 
 def test_marcas_fuera_geocerca(client, H, ids, db):
     """Detecta marcas fuera de rango permitido."""
-    from app.models import Marca, Trabajador
     from datetime import datetime
+
+    from app.models import Marca, Trabajador
     
     trabajador = db.query(Trabajador).filter(Trabajador.codigo == "CAV-008").first()
     if not trabajador:
@@ -123,7 +125,7 @@ def test_marcas_fuera_geocerca(client, H, ids, db):
 
 def test_part_time_riesgo_promedio_semanal(client, H, ids, db):
     """Detecta PT con promedio >4h/dia en alguna semana."""
-    from app.models import Asistencia, Trabajador, TipoContrato
+    from app.models import Asistencia, TipoContrato, Trabajador
     
     # Buscar o crear trabajador PT
     tipo_pt = db.query(TipoContrato).filter(TipoContrato.codigo == "PT85").first()
