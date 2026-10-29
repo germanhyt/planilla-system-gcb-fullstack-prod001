@@ -142,7 +142,7 @@ def consolidado_mensual(
         try:
             from openpyxl import Workbook
         except ImportError:
-            raise HTTPException(500, "openpyxl no instalado")
+            raise HTTPException(500, "openpyxl no instalado") from None
         
         wb = Workbook()
         ws = wb.active

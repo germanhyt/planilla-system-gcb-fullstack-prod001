@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from ..audit import audit
 from ..db import get_db
 from ..deps import current_user
-from ..models import Asistencia, CierrePeriodo, Marca, RegularizacionHE, Usuario
+from ..models import Asistencia, CierrePeriodo, RegularizacionHE, Trabajador, Usuario
 from ..schemas import CierrePeriodoIn, ReaperturaPeriodoIn
 
 router = APIRouter(prefix="/periodos", tags=["periodos"])
@@ -56,10 +56,11 @@ def cerrar_periodo(
     db.add(cierre)
     
     # Marcar todas las asistencias de ese periodo como cerradas
-    db.query(Asistencia).filter(
-        Asistencia.periodo == data.periodo
-    ).join(Asistencia.trabajador).filter(
-        Asistencia.trabajador.has(empresa_id=data.empresa_id)
+    db.query(Asistencia).join(
+        Trabajador, Asistencia.trabajador_id == Trabajador.id
+    ).filter(
+        Asistencia.periodo == data.periodo,
+        Trabajador.empresa_id == data.empresa_id
     ).update({Asistencia.periodo_cerrado: True}, synchronize_session=False)
     
     db.commit()
@@ -105,10 +106,11 @@ def reabrir_periodo(
     cierre.razon_reapertura = data.razon_reapertura
     
     # Desmarcar asistencias como cerradas para permitir recálculo
-    db.query(Asistencia).filter(
-        Asistencia.periodo == cierre.periodo
-    ).join(Asistencia.trabajador).filter(
-        Asistencia.trabajador.has(empresa_id=cierre.empresa_id)
+    db.query(Asistencia).join(
+        Trabajador, Asistencia.trabajador_id == Trabajador.id
+    ).filter(
+        Asistencia.periodo == cierre.periodo,
+        Trabajador.empresa_id == cierre.empresa_id
     ).update({Asistencia.periodo_cerrado: False}, synchronize_session=False)
     
     db.commit()
