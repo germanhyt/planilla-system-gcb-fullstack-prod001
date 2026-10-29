@@ -119,3 +119,37 @@ class BonoIn(BaseModel):
 class BonoDecision(BaseModel):
     aprobar: bool
     comentario: Optional[str] = None
+
+
+class HorarioPlanIn(BaseModel):
+    trabajador_id: int
+    semana_inicio: date
+    lunes_plantilla_id: Optional[int] = None
+    martes_plantilla_id: Optional[int] = None
+    miercoles_plantilla_id: Optional[int] = None
+    jueves_plantilla_id: Optional[int] = None
+    viernes_plantilla_id: Optional[int] = None
+    sabado_plantilla_id: Optional[int] = None
+    domingo_plantilla_id: Optional[int] = None
+
+
+class MarcaIn(BaseModel):
+    tipo: Literal["entrada", "salida"]
+    lat: Optional[float] = Field(None, ge=-90, le=90)
+    lng: Optional[float] = Field(None, ge=-180, le=180)
+    ts_cliente: Optional[datetime] = None
+    qr_code: Optional[str] = None
+
+
+class MarcaManualIn(BaseModel):
+    trabajador_id: int
+    tipo: Literal["entrada", "salida"]
+    ts_servidor: datetime
+    razon_manual: str
+    sede_id: Optional[int] = None
+
+
+class RegularizacionDecision(BaseModel):
+    aprobar: bool
+    destino: Optional[Literal["pago", "compensacion", "mixto"]] = None
+    observacion: Optional[str] = None

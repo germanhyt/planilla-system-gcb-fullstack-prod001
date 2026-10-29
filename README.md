@@ -1,7 +1,92 @@
-# Sistema de Planillas GCB — Sprint 1
+# Sistema de Planillas GCB — Sprint 2
 
 Grupo Cordillera Blanca (Perú, `America/Lima`). Base técnica tomada del spike `spike-tareo`:
 FastAPI + PostgreSQL 16 + Redis/RQ (worker) + React/TS/Vite PWA servido por nginx, con Docker Compose.
+
+## Alcance Sprint 2 (Tareo y Asistencia)
+
+**Construido sobre Sprint 1** (PR #1). Implementa el sistema completo de programación de turnos, marcado de asistencia con validación GPS/QR, motor de cálculo diario en RQ worker, y bandeja de regularización para jefes.
+
+### Nuevas Funcionalidades
+
+#### 1. Plantillas de Turno Completas
+- **Turnos que cruzan medianoche** (ej. 19:00–02:00): el cálculo respeta el día operativo según corte CAVAS 06:00
+- **Refrigerio/break configurable** por plantilla (descontado de horas trabajadas)
+- **Turnos rotativos 24/7** (ej. Parking Explanada GCB SA: 3 turnos, 8 personas)
+
+#### 2. Horario Semanal Versionado por Trabajador
+- **Versiones**: cada cambio de horario = nueva versión para la misma semana
+- **Día a día**: lunes–domingo, cada día con su plantilla de turno (puede ser `null` = descanso)
+- **Alertas no bloqueantes**:
+  - ⚠️ Jornada >8h/día
+  - ⚠️ Total semanal >48h
+  - ⚠️ Sin descanso semanal de 24h
+  - ⚠️ Part time: promedio diario semanal >4h
+- **Copiar semana anterior**: endpoint para duplicar programación con un clic
+- **Cálculo por versión vigente**: cada marca usa el plan que estaba vigente ese día
+
+#### 3. Check-in/out desde PWA
+- **GPS con geocerca server-side**:
+  - Validación de distancia contra `sede.radio_geocerca_m`
+  - Estados: `ok` / `fuera_geocerca` (no bloquea, alerta al supervisor)
+  - Cálculo haversine en backend
+- **QR scanning**:
+  - BarcodeDetector API (Chrome/Edge)
+  - **Fallback zxing-js/browser para iOS Safari** (sin BarcodeDetector)
+  - Campo `qr_code` almacenado en marca
+- **Server time autoritativo**: `ts_servidor` es la fuente de verdad
+- **Rechazo de duplicados**: ventana de 5 min para evitar marcas duplicadas del mismo tipo
+- **Marca manual por jefe/rrhh** con razón auditada
+
+#### 4. Motor de Cálculo Diario (RQ Worker)
+- **Job async** `recalcular_trabajador_periodo(trabajador_id, periodo)`
+- **Día operativo**:
+  - CAVAS: corte 06:00 → marcas antes de 06:00 pertenecen al día anterior
+  - GCB SA: día calendario (00:00–24:00)
+- **Tardanza** según modo de tolerancia:
+  - `umbral_perdona`: si ≤ umbral → 0, si no cuenta todo
+  - `umbral_descuenta_exceso`: solo descuenta el exceso sobre el umbral
+  - `sin_tolerancia`: cuenta desde el primer minuto
+- **Horas trabajadas netas**: entrada–salida menos refrigerio
+- **Horas extra solo si pre-programadas**:
+  - Split: 25% primeras 2h, 35% resto
+  - Exceso no programado → bandeja del jefe para regularización
+- **Horas nocturnas 22:00–06:00**: siempre calculadas
+- **Periodo operativo**: mes calendario por día operativo (marca 03:00 del 1° → mes anterior si corte = 06:00)
+- **Lock de recálculo**: `periodo_cerrado=true` bloquea cambios
+
+#### 5. Bandeja de Regularización (Jefe)
+- **Exceso no programado** aparece como `RegularizacionHE` en estado `pendiente`
+- **Decisión del jefe**:
+  - Aprobar → destino `pago` / `compensacion` / `mixto` (actualiza `asistencia.horas_extra_25/35`)
+  - Rechazar → registro auditado, exceso no se paga
+- **Filtrado por unidad**: jefe solo ve trabajadores de su unidad
+- **Historial completo** por trabajador
+
+#### 6. Tests Completos
+- **Motor (`test_engine.py`)**:
+  - ✅ Distancia haversine
+  - ✅ Día operativo con corte 06:00
+  - ✅ Periodo operativo (día 1 a las 03:00 → mes anterior)
+  - ✅ Tardanza (3 modos: umbral_perdona, umbral_descuenta_exceso, sin_tolerancia)
+  - ✅ Horas nocturnas 22:00–06:00
+  - ✅ Horas trabajadas con refrigerio
+  - ✅ Split HE 25% / 35%
+  - ✅ Turno cruza medianoche
+  - ✅ Cálculo completo de asistencia
+- **API Marcas (`test_marcas.py`)**:
+  - ✅ Registro con GPS
+  - ✅ Validación geocerca (ok / fuera)
+  - ✅ Rechazo de duplicados
+  - ✅ Marca manual por jefe con razón
+- **API Horarios (`test_horarios.py`)**:
+  - ✅ Creación de plan semanal
+  - ✅ Alertas no bloqueantes (>8h/día, >48h/semana, sin descanso)
+  - ✅ Copiar semana anterior
+- **API Regularizaciones (`test_regularizaciones.py`)**:
+  - ✅ Listar pendientes por unidad
+  - ✅ Aprobar con destino pago/compensacion/mixto
+  - ✅ Rechazar con observación
 
 ## Alcance Sprint 1
 - **Plataforma**: esquema solo por **Alembic** (`backend/alembic/versions`, sin `create_all`), BD de pruebas aislada
