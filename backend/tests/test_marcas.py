@@ -6,7 +6,7 @@ from app.models import Empresa, Sede, TipoContrato, Trabajador, Unidad, Usuario
 
 def test_registrar_marca_gps(client: TestClient, db, admin_token):
     """Test de registro de marca con GPS."""
-    empresa = Empresa(codigo="TST", razon_social="Test", ruc="20111111111")
+    empresa = Empresa(codigo=unique_id, razon_social=f"Test{unique_id}", ruc=f"20{unique_id[1:]}111")
     db.add(empresa)
     db.flush()
     
@@ -50,7 +50,7 @@ def test_registrar_marca_gps(client: TestClient, db, admin_token):
         unidad_id=unidad.id,
         sede_id=sede.id,
         doc_tipo="DNI",
-        doc_numero="12345678",
+        doc_numero=f"{unique_id}12345678",
         nombres="Juan",
         apellidos="Test",
         tipo_contrato_id=tipo.id,
@@ -80,9 +80,9 @@ def test_registrar_marca_gps(client: TestClient, db, admin_token):
     assert data["distancia_m"] < 100
 
 
-def test_registrar_marca_fuera_geocerca(client: TestClient, db):
+def test_registrar_marca_fuera_geocerca(client: TestClient, db, unique_id):
     """Test de marca fuera de la geocerca."""
-    empresa = Empresa(codigo="TST", razon_social="Test", ruc="20111111111")
+    empresa = Empresa(codigo=unique_id, razon_social=f"Test{unique_id}", ruc=f"20{unique_id[1:]}111")
     db.add(empresa)
     db.flush()
     
@@ -126,7 +126,7 @@ def test_registrar_marca_fuera_geocerca(client: TestClient, db):
         unidad_id=unidad.id,
         sede_id=sede.id,
         doc_tipo="DNI",
-        doc_numero="87654321",
+        doc_numero=f"{unique_id}87654321",
         nombres="Maria",
         apellidos="Test",
         tipo_contrato_id=tipo.id,
@@ -155,9 +155,9 @@ def test_registrar_marca_fuera_geocerca(client: TestClient, db):
     assert data["distancia_m"] > 50
 
 
-def test_registrar_marca_duplicada(client: TestClient, db):
+def test_registrar_marca_duplicada(client: TestClient, db, unique_id):
     """Test de rechazo de marca duplicada en ventana de 5 min."""
-    empresa = Empresa(codigo="TST", razon_social="Test", ruc="20111111111")
+    empresa = Empresa(codigo=unique_id, razon_social=f"Test{unique_id}", ruc=f"20{unique_id[1:]}111")
     db.add(empresa)
     db.flush()
     
@@ -189,7 +189,7 @@ def test_registrar_marca_duplicada(client: TestClient, db):
         empresa_id=empresa.id,
         unidad_id=unidad.id,
         doc_tipo="DNI",
-        doc_numero="11223344",
+        doc_numero=f"{unique_id}11223344",
         nombres="Pedro",
         apellidos="Test",
         tipo_contrato_id=tipo.id,
@@ -218,9 +218,9 @@ def test_registrar_marca_duplicada(client: TestClient, db):
     assert "duplicado" in resp2.json()["detail"].lower()
 
 
-def test_registrar_marca_manual_jefe(client: TestClient, db):
+def test_registrar_marca_manual_jefe(client: TestClient, db, unique_id):
     """Test de marca manual por jefe."""
-    empresa = Empresa(codigo="TST", razon_social="Test", ruc="20111111111")
+    empresa = Empresa(codigo=unique_id, razon_social=f"Test{unique_id}", ruc=f"20{unique_id[1:]}111")
     db.add(empresa)
     db.flush()
     
@@ -253,7 +253,7 @@ def test_registrar_marca_manual_jefe(client: TestClient, db):
         empresa_id=empresa.id,
         unidad_id=unidad.id,
         doc_tipo="DNI",
-        doc_numero="55667788",
+        doc_numero=f"{unique_id}55667788",
         nombres="Ana",
         apellidos="Test",
         tipo_contrato_id=tipo.id,

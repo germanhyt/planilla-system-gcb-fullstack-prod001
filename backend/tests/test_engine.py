@@ -141,7 +141,7 @@ def test_turno_cruza_medianoche(db: Session):
 
 def test_calculo_asistencia_completo(db: Session):
     """Test de cálculo completo de asistencia de un día."""
-    empresa = Empresa(codigo="TST", razon_social="Test", ruc="20111111111")
+    empresa = Empresa(codigo=unique_id, razon_social=f"Test{unique_id}", ruc=f"20{unique_id[1:]}111")
     db.add(empresa)
     db.flush()
     
@@ -165,7 +165,7 @@ def test_calculo_asistencia_completo(db: Session):
         empresa_id=empresa.id,
         unidad_id=unidad.id,
         doc_tipo="DNI",
-        doc_numero="12345678",
+        doc_numero=f"{unique_id}12345678",
         nombres="Juan",
         apellidos="Test",
         tipo_contrato_id=tipo.id,

@@ -6,9 +6,9 @@ from fastapi.testclient import TestClient
 from app.models import Empresa, TipoContrato, Trabajador, TurnoPlantilla, Unidad, Usuario
 
 
-def test_crear_horario_semanal(client: TestClient, db):
+def test_crear_horario_semanal(client: TestClient, db, unique_id):
     """Test de creación de horario semanal."""
-    empresa = Empresa(codigo="TST", razon_social="Test", ruc="20111111111")
+    empresa = Empresa(codigo=unique_id, razon_social=f"Test{unique_id}", ruc=f"20{unique_id[1:]}111")
     db.add(empresa)
     db.flush()
     
@@ -31,7 +31,7 @@ def test_crear_horario_semanal(client: TestClient, db):
         empresa_id=empresa.id,
         unidad_id=unidad.id,
         doc_tipo="DNI",
-        doc_numero="12345678",
+        doc_numero=f"{unique_id}12345678",
         nombres="Juan",
         apellidos="Test",
         tipo_contrato_id=tipo.id,
@@ -83,9 +83,9 @@ def test_crear_horario_semanal(client: TestClient, db):
     assert data["version"] == 1
 
 
-def test_horario_alertas_exceso_horas(client: TestClient, db):
+def test_horario_alertas_exceso_horas(client: TestClient, db, unique_id):
     """Test de alertas no bloqueantes: >8h/día y >48h/semana."""
-    empresa = Empresa(codigo="TST", razon_social="Test", ruc="20111111111")
+    empresa = Empresa(codigo=unique_id, razon_social=f"Test{unique_id}", ruc=f"20{unique_id[1:]}111")
     db.add(empresa)
     db.flush()
     
@@ -108,7 +108,7 @@ def test_horario_alertas_exceso_horas(client: TestClient, db):
         empresa_id=empresa.id,
         unidad_id=unidad.id,
         doc_tipo="DNI",
-        doc_numero="87654321",
+        doc_numero=f"{unique_id}87654321",
         nombres="Maria",
         apellidos="Test",
         tipo_contrato_id=tipo.id,
@@ -161,9 +161,9 @@ def test_horario_alertas_exceso_horas(client: TestClient, db):
     assert len(data["alertas"]["warnings"]) > 0
 
 
-def test_copiar_semana_anterior(client: TestClient, db):
+def test_copiar_semana_anterior(client: TestClient, db, unique_id):
     """Test de copiado de horario de semana anterior."""
-    empresa = Empresa(codigo="TST", razon_social="Test", ruc="20111111111")
+    empresa = Empresa(codigo=unique_id, razon_social=f"Test{unique_id}", ruc=f"20{unique_id[1:]}111")
     db.add(empresa)
     db.flush()
     
@@ -186,7 +186,7 @@ def test_copiar_semana_anterior(client: TestClient, db):
         empresa_id=empresa.id,
         unidad_id=unidad.id,
         doc_tipo="DNI",
-        doc_numero="11223344",
+        doc_numero=f"{unique_id}11223344",
         nombres="Pedro",
         apellidos="Test",
         tipo_contrato_id=tipo.id,

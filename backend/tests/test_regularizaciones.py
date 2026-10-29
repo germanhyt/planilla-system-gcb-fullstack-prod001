@@ -6,9 +6,9 @@ from fastapi.testclient import TestClient
 from app.models import Asistencia, Empresa, RegularizacionHE, RuleSet, TipoContrato, Trabajador, Unidad, Usuario
 
 
-def test_listar_pendientes(client: TestClient, db):
+def test_listar_pendientes(client: TestClient, db, unique_id):
     """Test de listado de regularizaciones pendientes."""
-    empresa = Empresa(codigo="TST", razon_social="Test", ruc="20111111111")
+    empresa = Empresa(codigo=unique_id, razon_social=f"Test{unique_id}", ruc=f"20{unique_id[1:]}111")
     db.add(empresa)
     db.flush()
     
@@ -31,7 +31,7 @@ def test_listar_pendientes(client: TestClient, db):
         empresa_id=empresa.id,
         unidad_id=unidad.id,
         doc_tipo="DNI",
-        doc_numero="12345678",
+        doc_numero=f"{unique_id}12345678",
         nombres="Juan",
         apellidos="Test",
         tipo_contrato_id=tipo.id,
@@ -100,9 +100,9 @@ def test_listar_pendientes(client: TestClient, db):
     assert data[0]["horas_exceso"] == 2.5
 
 
-def test_aprobar_regularizacion(client: TestClient, db):
+def test_aprobar_regularizacion(client: TestClient, db, unique_id):
     """Test de aprobación de regularización."""
-    empresa = Empresa(codigo="TST", razon_social="Test", ruc="20111111111")
+    empresa = Empresa(codigo=unique_id, razon_social=f"Test{unique_id}", ruc=f"20{unique_id[1:]}111")
     db.add(empresa)
     db.flush()
     
@@ -125,7 +125,7 @@ def test_aprobar_regularizacion(client: TestClient, db):
         empresa_id=empresa.id,
         unidad_id=unidad.id,
         doc_tipo="DNI",
-        doc_numero="87654321",
+        doc_numero=f"{unique_id}87654321",
         nombres="Maria",
         apellidos="Test",
         tipo_contrato_id=tipo.id,
@@ -198,9 +198,9 @@ def test_aprobar_regularizacion(client: TestClient, db):
     assert data["destino"] == "pago"
 
 
-def test_rechazar_regularizacion(client: TestClient, db):
+def test_rechazar_regularizacion(client: TestClient, db, unique_id):
     """Test de rechazo de regularización."""
-    empresa = Empresa(codigo="TST", razon_social="Test", ruc="20111111111")
+    empresa = Empresa(codigo=unique_id, razon_social=f"Test{unique_id}", ruc=f"20{unique_id[1:]}111")
     db.add(empresa)
     db.flush()
     
@@ -223,7 +223,7 @@ def test_rechazar_regularizacion(client: TestClient, db):
         empresa_id=empresa.id,
         unidad_id=unidad.id,
         doc_tipo="DNI",
-        doc_numero="11223344",
+        doc_numero=f"{unique_id}11223344",
         nombres="Pedro",
         apellidos="Test",
         tipo_contrato_id=tipo.id,
