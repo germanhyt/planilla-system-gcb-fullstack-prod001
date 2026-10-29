@@ -1,7 +1,7 @@
 """Tests de API de marcas (check-in/out). Sprint 2."""
 from fastapi.testclient import TestClient
 
-from app.models import Empresa, Sede, Trabajador, TipoContrato, Unidad, Usuario
+from app.models import Empresa, Sede, TipoContrato, Trabajador, Unidad, Usuario
 
 
 def test_registrar_marca_gps(client: TestClient, db, admin_token):

@@ -3,7 +3,7 @@ from datetime import date
 
 from fastapi.testclient import TestClient
 
-from app.models import Empresa, Trabajador, TipoContrato, TurnoPlantilla, Unidad, Usuario
+from app.models import Empresa, TipoContrato, Trabajador, TurnoPlantilla, Unidad, Usuario
 
 
 def test_crear_horario_semanal(client: TestClient, db):

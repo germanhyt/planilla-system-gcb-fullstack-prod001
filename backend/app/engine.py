@@ -3,7 +3,6 @@ from datetime import date, datetime, time, timedelta
 from typing import Optional
 
 from sqlalchemy.orm import Session
-from zoneinfo import ZoneInfo
 
 from .models import Asistencia, HorarioPlan, Marca, RegularizacionHE, RuleSet, Trabajador, TurnoPlantilla
 
@@ -242,7 +241,8 @@ def calcular_asistencia_dia(
 
 def recalcular_trabajador_periodo(db: Session, trabajador_id: int, periodo: str):
     """RQ job: recalcula todas las asistencias de un trabajador en un periodo."""
-    from sqlalchemy import and_, delete
+    from sqlalchemy import and_
+
     from .rules import efectivas
     
     trabajador = db.query(Trabajador).get(trabajador_id)

@@ -3,7 +3,7 @@ from datetime import date
 
 from fastapi.testclient import TestClient
 
-from app.models import Asistencia, Empresa, RegularizacionHE, RuleSet, Trabajador, TipoContrato, Unidad, Usuario
+from app.models import Asistencia, Empresa, RegularizacionHE, RuleSet, TipoContrato, Trabajador, Unidad, Usuario
 
 
 def test_listar_pendientes(client: TestClient, db):

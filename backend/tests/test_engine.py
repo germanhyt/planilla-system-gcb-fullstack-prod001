@@ -1,5 +1,5 @@
 """Tests del motor de cálculo de asistencia. Sprint 2."""
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time
 
 from sqlalchemy.orm import Session
 
@@ -13,8 +13,8 @@ from app.engine import (
     get_dia_operativo,
     get_periodo_operativo,
 )
-from app.models import Empresa, HorarioPlan, Marca, RuleSet, Sede, Trabajador, TipoContrato, Unidad
-from app.rules import CAVAS, GCB_SA, efectivas
+from app.models import Empresa, Marca, RuleSet, TipoContrato, Trabajador, Unidad
+from app.rules import CAVAS, efectivas
 
 
 def test_calcular_distancia():
