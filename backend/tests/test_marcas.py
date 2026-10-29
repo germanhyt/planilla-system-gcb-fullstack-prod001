@@ -176,7 +176,7 @@ def test_registrar_marca_duplicada(client: TestClient, db, unique_id):
     db.flush()
     
     usuario = Usuario(
-        email="trabajador3@test.com",
+        email=f"{unique_id}trabajador3@test.com",
         password_hash="hash",
         rol="trabajador",
         nombre="Test Worker"

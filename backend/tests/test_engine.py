@@ -194,7 +194,7 @@ def test_calculo_asistencia_completo(db: Session, unique_id):
     salida = Marca(
         trabajador_id=trabajador.id,
         tipo="salida",
-        ts_servidor=datetime(2026, 10, 30, 2, 0),
+        ts_servidor=datetime(2026, 10, 29, 23, 30),
         metodo="gps",
         validacion_estado="ok"
     )

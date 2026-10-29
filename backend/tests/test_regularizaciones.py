@@ -170,7 +170,7 @@ def test_aprobar_regularizacion(client: TestClient, db, unique_id):
     db.flush()
     
     jefe = Usuario(
-        email="jefe2@test.com",
+        email=f"{unique_id}jefe2@test.com",
         password_hash="hash",
         rol="jefe",
         nombre="Jefe Test",
@@ -268,7 +268,7 @@ def test_rechazar_regularizacion(client: TestClient, db, unique_id):
     db.flush()
     
     jefe = Usuario(
-        email="jefe3@test.com",
+        email=f"{unique_id}jefe3@test.com",
         password_hash="hash",
         rol="jefe",
         nombre="Jefe Test",
