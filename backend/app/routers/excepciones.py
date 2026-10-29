@@ -154,8 +154,8 @@ def listar_marcas_fuera_geocerca(
         and_(
             Marca.ts_servidor >= desde,
             Marca.ts_servidor < hasta + timedelta(days=1),
-            Marca.distancia_metros.isnot(None),
-            Marca.distancia_metros > 200  # Umbral configurable
+            Marca.distancia_m.isnot(None),
+            Marca.distancia_m > 200  # Umbral configurable
         )
     )
     
@@ -182,7 +182,7 @@ def listar_marcas_fuera_geocerca(
                 "tipo": m.tipo,
                 "latitud": float(m.lat) if m.lat else None,
                 "longitud": float(m.lng) if m.lng else None,
-                "distancia_metros": int(m.distancia_metros) if m.distancia_metros else None
+                "distancia_metros": int(m.distancia_m) if m.distancia_m else None
             })
     
     return resultado
@@ -207,8 +207,14 @@ def reporte_part_time_riesgo(
         fecha_fin = date(anio, mes + 1, 1)
     
     # Obtener trabajadores part-time (tipo_contrato PT)
-    trabajadores_pt = db.query(Trabajador).join(Trabajador.tipo_contrato_rel).filter(
-        Trabajador.tipo_contrato_rel.has(codigo__in=["PT85", "PT102"])
+    from ..models import TipoContrato
+    tipos_pt = db.query(TipoContrato).filter(
+        TipoContrato.codigo.in_(["PT85", "PT102"])
+    ).all()
+    pt_ids = [t.id for t in tipos_pt]
+    
+    trabajadores_pt = db.query(Trabajador).filter(
+        Trabajador.tipo_contrato_id.in_(pt_ids)
     ).all()
     
     riesgos = []
@@ -237,6 +243,7 @@ def reporte_part_time_riesgo(
                 
                 # Alerta si promedio semanal > 4h/día
                 if promedio_diario > 4.0:
+                    tipo_contrato = db.query(TipoContrato).get(trab.tipo_contrato_id)
                     riesgos.append({
                         "trabajador_id": trab.id,
                         "codigo": trab.codigo,
@@ -246,7 +253,7 @@ def reporte_part_time_riesgo(
                         "dias_trabajados": dias_trabajados,
                         "total_horas_semana": round(total_horas, 2),
                         "promedio_diario": round(promedio_diario, 2),
-                        "tipo_contrato": trab.tipo_contrato_rel.codigo if trab.tipo_contrato_rel else None
+                        "tipo_contrato": tipo_contrato.codigo if tipo_contrato else None
                     })
             
             # Saltar a la siguiente semana

@@ -15,7 +15,7 @@ def test_credito_desde_regularizacion_compensada(client, H, ids, db):
     from app.models import Asistencia, RegularizacionHE, Trabajador
     
     # Crear asistencia y regularizacion de prueba
-    trabajador = db.query(Trabajador).filter(Trabajador.codigo == "E001").first()
+    trabajador = db.query(Trabajador).filter(Trabajador.codigo == "CAV-001").first()
     asistencia = Asistencia(
         trabajador_id=trabajador.id,
         dia_operativo=date(2026, 10, 15),
@@ -65,7 +65,7 @@ def test_credito_mixto_50_50(client, H, ids, db):
     """Aprobacion mixta divide 50% pago, 50% compensacion."""
     from app.models import Asistencia, RegularizacionHE, Trabajador
     
-    trabajador = db.query(Trabajador).filter(Trabajador.codigo == "E002").first()
+    trabajador = db.query(Trabajador).filter(Trabajador.codigo == "CAV-002").first()
     asistencia = Asistencia(
         trabajador_id=trabajador.id,
         dia_operativo=date(2026, 10, 16),
@@ -106,7 +106,7 @@ def test_debito_descanso_reduce_saldo(client, H, ids, db):
     """Registrar descanso tomado reduce el saldo."""
     from app.models import Asistencia, BancoHorasCompensatorias, RegularizacionHE, Trabajador
     
-    trabajador = db.query(Trabajador).filter(Trabajador.codigo == "E003").first()
+    trabajador = db.query(Trabajador).filter(Trabajador.codigo == "CAV-003").first()
     
     # Crear credito inicial
     asistencia = Asistencia(
@@ -161,7 +161,7 @@ def test_debito_saldo_insuficiente(client, H, ids, db):
     """No se puede registrar descanso si saldo insuficiente."""
     from app.models import Asistencia, Trabajador
     
-    trabajador = db.query(Trabajador).filter(Trabajador.codigo == "E004").first()
+    trabajador = db.query(Trabajador).filter(Trabajador.codigo == "CAV-004").first()
     asistencia = Asistencia(
         trabajador_id=trabajador.id,
         dia_operativo=date(2026, 10, 21),
@@ -193,7 +193,7 @@ def test_expiraciones_proximas(client, H, ids, db):
     """Lista creditos proximos a expirar."""
     from app.models import BancoHorasCompensatorias, Trabajador
     
-    trabajador = db.query(Trabajador).filter(Trabajador.codigo == "E005").first()
+    trabajador = db.query(Trabajador).filter(Trabajador.codigo == "CAV-005").first()
     
     # Crear credito que expira en 10 dias
     credito = BancoHorasCompensatorias(
@@ -226,7 +226,7 @@ def test_trabajador_solo_ve_su_saldo(client, H, ids, db):
     """Trabajador solo puede consultar su propio saldo."""
     from app.models import Trabajador
     
-    # E001 es el trabajador del token trabajador
+    # CAV-001 es el trabajador del token trabajador
     resp_propio = client.get("/banco-horas/saldo/1", headers=H["trabajador"])
     # Deberia funcionar si el trabajador con el token es id=1
     # Si falla con 403, es porque el trabajador no es id=1

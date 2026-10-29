@@ -7,9 +7,9 @@ def test_faltas_sin_justificar_detecta_ausencias(client, H, ids, db):
     """Detecta dias programados sin asistencia."""
     from app.models import HorarioPlan, Trabajador, TurnoPlantilla
     
-    trabajador = db.query(Trabajador).filter(Trabajador.codigo == "E006").first()
+    trabajador = db.query(Trabajador).filter(Trabajador.codigo == "CAV-006").first()
     if not trabajador:
-        pytest.skip("Trabajador E006 no existe")
+        pytest.skip("Trabajador CAV-006 no existe")
     
     # Crear plan de horario para una semana
     turno = db.query(TurnoPlantilla).first()
@@ -41,9 +41,9 @@ def test_tardanzas_recurrentes_detecta_patron(client, H, ids, db):
     """Detecta trabajadores con multiples tardanzas."""
     from app.models import Asistencia, Trabajador
     
-    trabajador = db.query(Trabajador).filter(Trabajador.codigo == "E007").first()
+    trabajador = db.query(Trabajador).filter(Trabajador.codigo == "CAV-007").first()
     if not trabajador:
-        pytest.skip("Trabajador E007 no existe")
+        pytest.skip("Trabajador CAV-007 no existe")
     
     # Crear 5 asistencias con tardanza
     for i in range(5):
@@ -83,9 +83,9 @@ def test_marcas_fuera_geocerca(client, H, ids, db):
     """Detecta marcas fuera de rango permitido."""
     from app.models import Marca, Trabajador
     
-    trabajador = db.query(Trabajador).filter(Trabajador.codigo == "E008").first()
+    trabajador = db.query(Trabajador).filter(Trabajador.codigo == "CAV-008").first()
     if not trabajador:
-        pytest.skip("Trabajador E008 no existe")
+        pytest.skip("Trabajador CAV-008 no existe")
     
     # Crear marca fuera de geocerca (distancia > 200m)
     marca = Marca(

@@ -155,7 +155,7 @@ def test_r5_destino_he_pago_25_35(client, H, ids, db):
     """R5: Destino pago aplica 25% primeras 2h, 35% resto."""
     from app.models import Asistencia, RegularizacionHE, Trabajador
     
-    trabajador = db.query(Trabajador).filter(Trabajador.codigo == "E001").first()
+    trabajador = db.query(Trabajador).filter(Trabajador.codigo == "CAV-001").first()
     asistencia = Asistencia(
         trabajador_id=trabajador.id,
         dia_operativo=date(2026, 10, 28),
@@ -200,7 +200,7 @@ def test_r5_destino_compensacion_crea_credito(client, H, ids, db):
     """R5: Destino compensacion crea credito en banco horas."""
     from app.models import Asistencia, RegularizacionHE, Trabajador
     
-    trabajador = db.query(Trabajador).filter(Trabajador.codigo == "E002").first()
+    trabajador = db.query(Trabajador).filter(Trabajador.codigo == "CAV-002").first()
     asistencia = Asistencia(
         trabajador_id=trabajador.id,
         dia_operativo=date(2026, 10, 29),
