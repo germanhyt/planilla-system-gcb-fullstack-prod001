@@ -30,7 +30,7 @@ export function Marcador({ token }: MarcadorProps) {
         });
       });
 
-      const resp = await api("/marcas/", {
+      const data = await api("/marcas/", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -43,15 +43,6 @@ export function Marcador({ token }: MarcadorProps) {
           ts_cliente: new Date().toISOString()
         }
       });
-
-      const data = await resp.json();
-
-      if (!resp.ok) {
-        const errorMsg = typeof data.detail === 'string' 
-          ? data.detail 
-          : data.detail?.msg || "Error al registrar marca";
-        throw new Error(errorMsg);
-      }
 
       setResultado(data);
     } catch (err: any) {
@@ -72,7 +63,7 @@ export function Marcador({ token }: MarcadorProps) {
     setError(null);
 
     try {
-      const resp = await api("/marcas/", {
+      const data = await api("/marcas/", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -84,15 +75,6 @@ export function Marcador({ token }: MarcadorProps) {
           ts_cliente: new Date().toISOString()
         }
       });
-
-      const data = await resp.json();
-
-      if (!resp.ok) {
-        const errorMsg = typeof data.detail === 'string' 
-          ? data.detail 
-          : data.detail?.msg || "Error al registrar marca con QR";
-        throw new Error(errorMsg);
-      }
 
       setResultado(data);
     } catch (err: any) {
