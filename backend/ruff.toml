@@ -1,0 +1,7 @@
+line-length = 130
+[lint]
+select = ["E", "F", "I", "B"]
+ignore = ["E501", "B008"]
+[lint.isort]
+known-third-party = ["alembic"]
+known-first-party = ["app", "seed", "conftest"]
