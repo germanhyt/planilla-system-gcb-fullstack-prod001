@@ -81,15 +81,3 @@ def unique_id():
     global _test_counter
     _test_counter += 1
     return f"T{_test_counter:06d}"
-
-
-@pytest.fixture
-def db():
-    """Database session for tests that need direct DB access."""
-    from app.db import SessionLocal
-    session = SessionLocal()
-    try:
-        yield session
-        session.rollback()
-    finally:
-        session.close()
