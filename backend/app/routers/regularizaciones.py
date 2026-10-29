@@ -93,11 +93,12 @@ def decidir_regularizacion(
         asistencia = db.query(Asistencia).get(reg.asistencia_id)
         if asistencia:
             if decision.destino == "pago":
-                if reg.horas_exceso <= 2:
-                    asistencia.horas_extra_25 += reg.horas_exceso
+                horas_exceso_float = float(reg.horas_exceso)
+                if horas_exceso_float <= 2:
+                    asistencia.horas_extra_25 = float(asistencia.horas_extra_25) + horas_exceso_float
                 else:
-                    asistencia.horas_extra_25 += 2
-                    asistencia.horas_extra_35 += (reg.horas_exceso - 2)
+                    asistencia.horas_extra_25 = float(asistencia.horas_extra_25) + 2
+                    asistencia.horas_extra_35 = float(asistencia.horas_extra_35) + (horas_exceso_float - 2)
             
             elif decision.destino == "compensacion":
                 # Crear crédito en banco de horas compensatorias
@@ -129,15 +130,16 @@ def decidir_regularizacion(
             
             elif decision.destino == "mixto":
                 # 50% a pago, 50% a compensación
+                from decimal import Decimal
                 horas_pago = float(reg.horas_exceso) / 2
                 horas_comp = float(reg.horas_exceso) / 2
                 
                 # Pago
                 if horas_pago <= 2:
-                    asistencia.horas_extra_25 += horas_pago
+                    asistencia.horas_extra_25 = float(asistencia.horas_extra_25) + horas_pago
                 else:
-                    asistencia.horas_extra_25 += 2
-                    asistencia.horas_extra_35 += (horas_pago - 2)
+                    asistencia.horas_extra_25 = float(asistencia.horas_extra_25) + 2
+                    asistencia.horas_extra_35 = float(asistencia.horas_extra_35) + (horas_pago - 2)
                 
                 # Compensación
                 ultimo = db.query(BancoHorasCompensatorias).filter(
