@@ -56,11 +56,14 @@ def cerrar_periodo(
     db.add(cierre)
     
     # Marcar todas las asistencias de ese periodo como cerradas
-    db.query(Asistencia).join(
-        Trabajador, Asistencia.trabajador_id == Trabajador.id
-    ).filter(
-        Asistencia.periodo == data.periodo,
+    # Usar un subquery para evitar el error de join() con update()
+    trabajador_ids_subq = db.query(Trabajador.id).filter(
         Trabajador.empresa_id == data.empresa_id
+    ).subquery()
+    
+    db.query(Asistencia).filter(
+        Asistencia.periodo == data.periodo,
+        Asistencia.trabajador_id.in_(trabajador_ids_subq)
     ).update({Asistencia.periodo_cerrado: True}, synchronize_session=False)
     
     db.commit()
@@ -106,11 +109,13 @@ def reabrir_periodo(
     cierre.razon_reapertura = data.razon_reapertura
     
     # Desmarcar asistencias como cerradas para permitir recálculo
-    db.query(Asistencia).join(
-        Trabajador, Asistencia.trabajador_id == Trabajador.id
-    ).filter(
-        Asistencia.periodo == cierre.periodo,
+    trabajador_ids_subq = db.query(Trabajador.id).filter(
         Trabajador.empresa_id == cierre.empresa_id
+    ).subquery()
+    
+    db.query(Asistencia).filter(
+        Asistencia.periodo == cierre.periodo,
+        Asistencia.trabajador_id.in_(trabajador_ids_subq)
     ).update({Asistencia.periodo_cerrado: False}, synchronize_session=False)
     
     db.commit()
