@@ -1,6 +1,7 @@
 """Tests Sprint 3: Dashboard de excepciones."""
-import pytest
 from datetime import date, timedelta
+
+import pytest
 from httpx import AsyncClient
 
 

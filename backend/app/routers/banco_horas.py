@@ -1,13 +1,7 @@
 """Sprint 3: Consultas de banco de horas compensatorias."""
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..banco_horas import (
-    get_saldo_actual,
-    historial_trabajador,
-    listar_proximas_expiraciones,
-)
 from ..db import get_db
 from ..deps import current_user
 from ..models import Trabajador, Usuario

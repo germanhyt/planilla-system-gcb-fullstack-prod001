@@ -3,12 +3,11 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
-from ..audit import auditar
-from ..banco_horas import registrar_credito
+from ..audit import audit
 from ..db import get_db
-from ..deps import get_current_user
+from ..deps import current_user
 from ..models import Asistencia, RegularizacionHE, Trabajador, Usuario
 from ..schemas import RegularizacionDecision
 

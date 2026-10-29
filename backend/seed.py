@@ -83,7 +83,7 @@ def main():
                       fecha_ingreso=date(2025, 6, 1))
     
     # Sprint 3: Agregar horarios semanales de muestra para trabajadores
-    trabajadores = db.scalars(select(Trabajador).where(Trabajador.activo == True).limit(10)).all()
+    trabajadores = db.scalars(select(Trabajador).where(Trabajador.activo).limit(10)).all()
     turnos_cavas_ids = db.scalars(select(TurnoPlantilla.id).where(TurnoPlantilla.unidad_id == u_cav.id)).all()
     turnos_parking_ids = db.scalars(select(TurnoPlantilla.id).where(TurnoPlantilla.unidad_id == u_par.id)).all()
     
