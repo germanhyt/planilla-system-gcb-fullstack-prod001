@@ -55,3 +55,15 @@ def ids(client, H):
     uni = {u["codigo"]: u["id"] for u in client.get("/unidades", headers=H["admin"]).json()}
     tc = {t["codigo"]: t["id"] for t in client.get("/tipos-contrato", headers=H["admin"]).json()}
     return {"emp": emp, "uni": uni, "tc": tc}
+
+
+@pytest.fixture
+def db():
+    """Database session for tests that need direct DB access."""
+    from app.db import SessionLocal
+    session = SessionLocal()
+    try:
+        yield session
+        session.rollback()
+    finally:
+        session.close()
