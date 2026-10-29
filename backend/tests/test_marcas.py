@@ -26,7 +26,7 @@ def test_registrar_marca_gps(client: TestClient, db, H, unique_id):
     db.flush()
     
     tipo = TipoContrato(
-        codigo="FT",
+        codigo=f"FT{unique_id}",
         nombre="Full Time",
         horas_mes=208,
         jornada_diaria_min=480,
@@ -102,7 +102,7 @@ def test_registrar_marca_fuera_geocerca(client: TestClient, db, unique_id):
     db.flush()
     
     tipo = TipoContrato(
-        codigo="FT",
+        codigo=f"FT{unique_id}",
         nombre="Full Time",
         horas_mes=208,
         jornada_diaria_min=480,
@@ -166,7 +166,7 @@ def test_registrar_marca_duplicada(client: TestClient, db, unique_id):
     db.flush()
     
     tipo = TipoContrato(
-        codigo="FT",
+        codigo=f"FT{unique_id}",
         nombre="Full Time",
         horas_mes=208,
         jornada_diaria_min=480,
@@ -229,7 +229,7 @@ def test_registrar_marca_manual_jefe(client: TestClient, db, unique_id):
     db.flush()
     
     tipo = TipoContrato(
-        codigo="FT",
+        codigo=f"FT{unique_id}",
         nombre="Full Time",
         horas_mes=208,
         jornada_diaria_min=480,

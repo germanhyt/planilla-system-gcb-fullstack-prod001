@@ -17,7 +17,7 @@ def test_listar_pendientes(client: TestClient, db, unique_id):
     db.flush()
     
     tipo = TipoContrato(
-        codigo="FT",
+        codigo=f"FT{unique_id}",
         nombre="Full Time",
         horas_mes=208,
         jornada_diaria_min=480,
@@ -111,7 +111,7 @@ def test_aprobar_regularizacion(client: TestClient, db, unique_id):
     db.flush()
     
     tipo = TipoContrato(
-        codigo="FT",
+        codigo=f"FT{unique_id}",
         nombre="Full Time",
         horas_mes=208,
         jornada_diaria_min=480,
@@ -209,7 +209,7 @@ def test_rechazar_regularizacion(client: TestClient, db, unique_id):
     db.flush()
     
     tipo = TipoContrato(
-        codigo="FT",
+        codigo=f"FT{unique_id}",
         nombre="Full Time",
         horas_mes=208,
         jornada_diaria_min=480,

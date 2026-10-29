@@ -150,7 +150,7 @@ def test_calculo_asistencia_completo(db: Session, unique_id):
     db.flush()
     
     tipo = TipoContrato(
-        codigo="FT",
+        codigo=f"FT{unique_id}",
         nombre="Full Time",
         horas_mes=208,
         jornada_diaria_min=480,
