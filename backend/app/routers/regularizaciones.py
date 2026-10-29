@@ -1,5 +1,5 @@
 """API de regularización de horas extra no programadas (bandeja del jefe). Sprint 2."""
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from ..audit import audit
 from ..db import get_db
 from ..deps import current_user
-from ..models import Asistencia, RegularizacionHE, Trabajador, Usuario
+from ..models import Asistencia, BancoHorasCompensatorias, RegularizacionHE, Trabajador, Usuario
 from ..schemas import RegularizacionDecision
 
 r = APIRouter(prefix="/regularizaciones", tags=["regularizaciones"])
@@ -98,6 +98,72 @@ def decidir_regularizacion(
                 else:
                     asistencia.horas_extra_25 += 2
                     asistencia.horas_extra_35 += (reg.horas_exceso - 2)
+            
+            elif decision.destino == "compensacion":
+                # Crear crédito en banco de horas compensatorias
+                ultimo = db.query(BancoHorasCompensatorias).filter(
+                    BancoHorasCompensatorias.trabajador_id == trabajador.id
+                ).order_by(BancoHorasCompensatorias.creado_en.desc()).first()
+                
+                saldo_anterior = float(ultimo.saldo_nuevo) if ultimo else 0.0
+                saldo_nuevo = saldo_anterior + reg.horas_exceso
+                
+                # Configurar expiración: 90 días por defecto
+                dias_expiracion = 90
+                fecha_expira = asistencia.dia_operativo + timedelta(days=dias_expiracion)
+                
+                banco_mov = BancoHorasCompensatorias(
+                    trabajador_id=trabajador.id,
+                    fecha_movimiento=asistencia.dia_operativo,
+                    tipo="credito",
+                    horas=reg.horas_exceso,
+                    saldo_anterior=saldo_anterior,
+                    saldo_nuevo=saldo_nuevo,
+                    origen=f"HE compensatoria aprobada (reg #{reg.id})",
+                    regularizacion_id=reg.id,
+                    asistencia_id=reg.asistencia_id,
+                    dias_expiracion=dias_expiracion,
+                    fecha_expira=fecha_expira
+                )
+                db.add(banco_mov)
+            
+            elif decision.destino == "mixto":
+                # 50% a pago, 50% a compensación
+                horas_pago = reg.horas_exceso / 2
+                horas_comp = reg.horas_exceso / 2
+                
+                # Pago
+                if horas_pago <= 2:
+                    asistencia.horas_extra_25 += horas_pago
+                else:
+                    asistencia.horas_extra_25 += 2
+                    asistencia.horas_extra_35 += (horas_pago - 2)
+                
+                # Compensación
+                ultimo = db.query(BancoHorasCompensatorias).filter(
+                    BancoHorasCompensatorias.trabajador_id == trabajador.id
+                ).order_by(BancoHorasCompensatorias.creado_en.desc()).first()
+                
+                saldo_anterior = float(ultimo.saldo_nuevo) if ultimo else 0.0
+                saldo_nuevo = saldo_anterior + horas_comp
+                
+                dias_expiracion = 90
+                fecha_expira = asistencia.dia_operativo + timedelta(days=dias_expiracion)
+                
+                banco_mov = BancoHorasCompensatorias(
+                    trabajador_id=trabajador.id,
+                    fecha_movimiento=asistencia.dia_operativo,
+                    tipo="credito",
+                    horas=horas_comp,
+                    saldo_anterior=saldo_anterior,
+                    saldo_nuevo=saldo_nuevo,
+                    origen=f"HE mixta aprobada (reg #{reg.id}) - parte compensatoria",
+                    regularizacion_id=reg.id,
+                    asistencia_id=reg.asistencia_id,
+                    dias_expiracion=dias_expiracion,
+                    fecha_expira=fecha_expira
+                )
+                db.add(banco_mov)
             
             asistencia.exceso_no_programado = 0
     
