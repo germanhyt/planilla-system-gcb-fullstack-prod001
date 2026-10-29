@@ -1,5 +1,5 @@
 """API de regularización de horas extra no programadas (bandeja del jefe). Sprint 2."""
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -87,7 +87,7 @@ def decidir_regularizacion(
     reg.destino = decision.destino if decision.aprobar else None
     reg.observacion = decision.observacion
     reg.decision_por = u.id
-    reg.decision_en = datetime.utcnow()
+    reg.decision_en = datetime.now(timezone.utc)
     
     if decision.aprobar:
         asistencia = db.query(Asistencia).get(reg.asistencia_id)

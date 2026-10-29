@@ -1,5 +1,5 @@
 """API de marcas (check-in/out) con validación GPS/QR. Sprint 2."""
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import and_
@@ -35,7 +35,7 @@ def validar_geocerca(db: Session, trabajador_id: int, lat: float, lng: float) ->
 
 def verificar_duplicado(db: Session, trabajador_id: int, tipo: str, ventana_min: int = 5) -> bool:
     """Verifica si ya existe una marca del mismo tipo en los últimos N minutos."""
-    ahora = datetime.utcnow()
+    ahora = datetime.now(timezone.utc)
     hace_n_min = ahora - timedelta(minutes=ventana_min)
     
     existe = db.query(Marca).filter(
@@ -65,7 +65,7 @@ def registrar_marca(marca_in: MarcaIn, request: Request, db: Session = Depends(g
     if marca_in.lat is not None and marca_in.lng is not None:
         validacion_estado, distancia_m, sede_id = validar_geocerca(db, trabajador.id, marca_in.lat, marca_in.lng)
     
-    ts_servidor = datetime.utcnow()
+    ts_servidor = datetime.now(timezone.utc)
     
     marca = Marca(
         trabajador_id=trabajador.id,
