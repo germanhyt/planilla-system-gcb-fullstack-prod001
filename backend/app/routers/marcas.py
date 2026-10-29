@@ -1,6 +1,5 @@
 """API de marcas (check-in/out) con validación GPS/QR. Sprint 2."""
 from datetime import datetime, timedelta
-from math import asin, cos, radians, sin, sqrt
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import and_
@@ -9,25 +8,11 @@ from sqlalchemy.orm import Session
 from ..audit import audit
 from ..db import get_db
 from ..deps import require
+from ..engine import calcular_distancia
 from ..models import Marca, Sede, Trabajador, Usuario
 from ..schemas import MarcaIn, MarcaManualIn
 
 r = APIRouter(prefix="/marcas", tags=["marcas"])
-
-
-def calcular_distancia(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
-    """Calcula distancia en metros usando fórmula haversine."""
-    R = 6371000
-    
-    lat1_rad = radians(lat1)
-    lat2_rad = radians(lat2)
-    delta_lat = radians(lat2 - lat1)
-    delta_lng = radians(lng2 - lng1)
-    
-    a = sin(delta_lat / 2) ** 2 + cos(lat1_rad) * cos(lat2_rad) * sin(delta_lng / 2) ** 2
-    c = 2 * asin(sqrt(a))
-    
-    return R * c
 
 
 def validar_geocerca(db: Session, trabajador_id: int, lat: float, lng: float) -> tuple[str, float, int]:

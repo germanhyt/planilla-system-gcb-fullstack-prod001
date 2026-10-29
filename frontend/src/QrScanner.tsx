@@ -51,24 +51,17 @@ export function QrScanner({ onScan, onClose }: QrScannerProps) {
             
             detectQr();
           } else {
-            const { BrowserMultiFormatReader } = await import("@zxing/browser");
-            const codeReader = new BrowserMultiFormatReader();
+            const { BrowserQRCodeReader } = await import("@zxing/browser");
+            const codeReader = new BrowserQRCodeReader();
             
-            const scanFromVideo = async () => {
-              if (videoRef.current && videoRef.current.readyState === videoRef.current.HAVE_ENOUGH_DATA) {
-                try {
-                  const result = await codeReader.decodeFromVideoElement(videoRef.current);
-                  if (result) {
-                    onScan(result.getText());
-                    return;
-                  }
-                } catch (e) {
-                }
+            try {
+              const result = await codeReader.decodeOnceFromVideoDevice(undefined, videoRef.current!);
+              if (result) {
+                onScan(result.getText());
               }
-              animationId = requestAnimationFrame(scanFromVideo);
-            };
-            
-            scanFromVideo();
+            } catch (e) {
+              console.error("Error escaneando QR con zxing:", e);
+            }
           }
         }
       } catch (err: any) {

@@ -1,10 +1,26 @@
 """Motor de cálculo de asistencia y horas. Sprint 2."""
 from datetime import date, datetime, time, timedelta
+from math import asin, cos, radians, sin, sqrt
 from typing import Optional
 
 from sqlalchemy.orm import Session
 
 from .models import Asistencia, HorarioPlan, Marca, RegularizacionHE, RuleSet, Trabajador, TurnoPlantilla
+
+
+def calcular_distancia(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    """Calcula distancia en metros usando fórmula haversine."""
+    R = 6371000
+    
+    lat1_rad = radians(lat1)
+    lat2_rad = radians(lat2)
+    delta_lat = radians(lat2 - lat1)
+    delta_lng = radians(lng2 - lng1)
+    
+    a = sin(delta_lat / 2) ** 2 + cos(lat1_rad) * cos(lat2_rad) * sin(delta_lng / 2) ** 2
+    c = 2 * asin(sqrt(a))
+    
+    return R * c
 
 
 def parse_time(t: str) -> time:
@@ -261,7 +277,7 @@ def recalcular_trabajador_periodo(db: Session, trabajador_id: int, periodo: str)
         and_(
             Asistencia.trabajador_id == trabajador_id,
             Asistencia.periodo == periodo,
-            Asistencia.periodo_cerrado == True
+            Asistencia.periodo_cerrado
         )
     ).first()
     
