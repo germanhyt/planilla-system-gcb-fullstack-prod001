@@ -6,7 +6,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 from zoneinfo import ZoneInfo
 
-from .models import Asistencia, HorarioPlan, Marca, RegularizacionHE, RuleSet, Trabajador, TurnoPlantilla
+from .models import Asistencia, HEProgramada, HorarioPlan, Marca, RegularizacionHE, RuleSet, Trabajador, TurnoPlantilla
 
 LIMA = ZoneInfo("America/Lima")
 # Ventana máxima para buscar la salida de un turno a partir de su entrada.
@@ -99,6 +99,13 @@ def get_turno_plantilla_dia(plan: HorarioPlan, dia: date) -> Optional[int]:
     return getattr(plan, f"{dia_semana}_plantilla_id", None)
 
 
+def he_programadas_dia(db: Session, trabajador_id: int, dia: date) -> float:
+    """HE preautorizadas (programadas por el jefe) vigentes para el día operativo; 0 si no hay."""
+    h = db.query(HEProgramada).filter(HEProgramada.trabajador_id == trabajador_id, HEProgramada.dia == dia,
+                                      HEProgramada.estado == "vigente").first()
+    return float(h.horas) if h else 0.0
+
+
 def get_rule_set_vigente(db: Session, empresa_id: int, dia: date) -> RuleSet:
     """Obtiene el rule_set vigente para la fecha dada."""
     from sqlalchemy import and_
@@ -188,14 +195,14 @@ def calcular_asistencia_dia(
     trabajador_id: int,
     dia_operativo: date,
     reglas: dict,
-    he_programadas: float = 0.0,
+    he_programadas: Optional[float] = None,
 ) -> Optional[dict]:
     """Motor de cálculo diario. Retorna dict con los campos calculados o None si no hay marcas.
 
     - La entrada se busca en la ventana del día operativo [dia+corte, dia+1+corte) hora Lima.
     - La salida es la primera posterior a la entrada dentro de MAX_TURNO (turnos que cruzan el corte).
     - Las marcas diferidas (offline) se calculan con la hora del dispositivo.
-    - he_programadas: HE pre-programadas del día (aún no hay almacenamiento; por defecto 0).
+    - he_programadas: HE preautorizadas del día. None = se leen de `he_programada` (programación del jefe).
     """
     from sqlalchemy import and_
     
@@ -234,6 +241,9 @@ def calcular_asistencia_dia(
     if not salida:
         return None
     
+    if he_programadas is None:
+        he_programadas = he_programadas_dia(db, trabajador_id, dia_operativo)
+
     horas_programadas = 0.0
     tardanza_min = 0
     refrigerio_min = 0

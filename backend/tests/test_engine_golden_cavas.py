@@ -14,6 +14,7 @@ from app.engine import calcular_asistencia_dia, recalcular_trabajador_periodo
 from app.models import (
     Asistencia,
     Empresa,
+    HEProgramada,
     HorarioPlan,
     Marca,
     RegularizacionHE,
@@ -198,6 +199,35 @@ def test_marca_diferida_se_calcula_con_hora_del_dispositivo(db, cavas):
     db.commit()
     r = calcular_asistencia_dia(db, t.id, LUNES, REGLAS)
     assert (r["tardanza_min"], r["horas_trabajadas"]) == (0, 7.97)
+
+
+@pytest.mark.parametrize("programadas,he25,he35,exceso", [
+    (None, 0.0, 0.0, 3.0),  # sin programación del jefe: todo el exceso es no autorizado -> bandeja
+    (2, 2.0, 0.0, 1.0),     # programó 2 h: se pagan al 25 %, la 3.ª va a la bandeja
+    (3, 2.0, 1.0, 0.0),     # programó 3 h: 2 h al 25 % + 1 h al 35 %, nada a la bandeja
+])
+def test_he_programadas_por_el_jefe_conectadas_al_motor(db, cavas, programadas, he25, he35, exceso):
+    """El motor lee la programación (he_programada) cuando no se le pasa he_programadas."""
+    trabajador, marcar = cavas
+    t = trabajador("dia")
+    if programadas is not None:
+        db.add(HEProgramada(trabajador_id=t.id, dia=LUNES, horas=programadas, creado_por=db.query(Usuario).first().id))
+    marcar(t, lima(LUNES, 8), lima(LUNES, 20))   # 11 h netas, 8 programadas
+    recalcular_trabajador_periodo(db, t.id, "2025-03")
+    a = db.query(Asistencia).filter_by(trabajador_id=t.id, dia_operativo=LUNES).one()
+    assert (float(a.horas_extra_25), float(a.horas_extra_35), float(a.exceso_no_programado)) == (he25, he35, exceso)
+    assert float(a.horas_extra_programadas) == float(programadas or 0)
+    regs = db.query(RegularizacionHE).filter_by(trabajador_id=t.id).all()
+    assert [float(r.horas_exceso) for r in regs] == ([exceso] if exceso else [])
+
+
+def test_he_programada_anulada_no_cuenta(db, cavas):
+    trabajador, marcar = cavas
+    t = trabajador("dia")
+    db.add(HEProgramada(trabajador_id=t.id, dia=LUNES, horas=3, estado="anulada", creado_por=db.query(Usuario).first().id))
+    marcar(t, lima(LUNES, 8), lima(LUNES, 20))
+    r = calcular_asistencia_dia(db, t.id, LUNES, REGLAS)
+    assert (r["horas_extra_25"], r["exceso_no_programado"]) == (0.0, 3.0)
 
 
 # --- Part-time PT85/PT102: alerta si el promedio diario semanal > 4 h ---------------------------

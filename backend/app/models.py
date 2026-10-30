@@ -295,3 +295,22 @@ class BancoHorasCompensatorias(Base):
     dias_expiracion: Mapped[Optional[int]] = mapped_column(Integer)  # Días configurables para expirar
     fecha_expira: Mapped[Optional[date]] = mapped_column(Date)
     creado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class HEProgramada(Base):
+    """Sprint 4: horas extra preautorizadas por el jefe para un día operativo.
+
+    Regla: sólo las HE programadas se pagan automáticamente (25%/35%); el exceso no programado
+    va a la bandeja del jefe como no autorizado. Una fila vigente por trabajador y día (upsert).
+    """
+    __tablename__ = "he_programada"
+    __table_args__ = (UniqueConstraint("trabajador_id", "dia"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    trabajador_id: Mapped[int] = mapped_column(ForeignKey("trabajador.id"), index=True)
+    dia: Mapped[date] = mapped_column(Date, index=True)  # día operativo
+    horas: Mapped[Decimal] = mapped_column(Numeric(4, 2))
+    motivo: Mapped[Optional[str]] = mapped_column(Text)
+    estado: Mapped[str] = mapped_column(String(20), default="vigente", server_default="vigente")  # vigente|anulada
+    creado_por: Mapped[int] = mapped_column(ForeignKey("usuario.id"))
+    creado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    actualizado_en: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
