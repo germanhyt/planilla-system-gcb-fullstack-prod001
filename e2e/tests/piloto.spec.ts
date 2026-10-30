@@ -47,9 +47,42 @@ test('rrhh: cierre de periodo (solo ver checklist), bono 3 AM, trabajadores', as
   await abrir(page, 'Trabajadores', /Trabajadores/)
 })
 
-test('admin: reglas vigentes y salir', async ({ page }) => {
-  await login(page, 'admin@demo.gcb.pe')
+test('rrhh: configuracion en solo lectura', async ({ page }) => {
+  await login(page, 'rrhh@demo.gcb.pe')
+  await abrir(page, 'Configuración', 'Configuración')
+  await expect(page.getByText('Solo lectura')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Valores vigentes' })).toBeVisible()
+  await expect(page.getByLabel('Tolerancia (min)')).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Previsualizar cambios' })).toHaveCount(0)
+})
+
+test('jefe: reglas vigentes (solo consulta)', async ({ page }) => {
+  await login(page, 'jefe@demo.gcb.pe')
   await abrir(page, 'Reglas', 'Reglas vigentes (rule_set)')
+  await expect(page.locator('nav').getByRole('button', { name: 'Configuración' })).toHaveCount(0)
+})
+
+// Configuración: SOLO previsualiza y valida; nunca publica versiones (seguro contra dev).
+test('admin: configuracion - historial, validaciones y preview del diff, y salir', async ({ page }) => {
+  await login(page, 'admin@demo.gcb.pe')
+  await abrir(page, 'Configuración', 'Configuración')
+  await expect(page.getByRole('heading', { name: 'Historial de versiones' })).toBeVisible()
+  await expect(page.getByText('(vigente)')).toBeVisible()
+  await page.getByRole('button', { name: 'Previsualizar cambios' }).click()
+  await expect(page.locator('[data-campo="motivo"]')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Publicar versión' })).toBeDisabled()
+  await page.getByLabel('Vigente desde').fill('2099-01-01')
+  await page.getByLabel('Motivo').fill('prueba e2e (no se publica)')
+  const tol = page.getByLabel('Tolerancia (min)')
+  await tol.fill('500')
+  await page.getByRole('button', { name: 'Previsualizar cambios' }).click()
+  await expect(page.locator('[data-campo="tolerancia.minutos"]')).toBeVisible()
+  await tol.fill('3')
+  await page.getByRole('button', { name: 'Previsualizar cambios' }).click()
+  await expect(page.getByRole('cell', { name: 'tolerancia.minutos' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Publicar versión' })).toBeEnabled()
+  await page.getByRole('button', { name: 'Tipos de contrato' }).click()
+  await expect(page.getByRole('heading', { name: 'Tipos de contrato' })).toBeVisible()
   await page.getByRole('button', { name: 'Salir' }).click()
   await expect(page.getByPlaceholder('Correo')).toBeVisible()
 })
