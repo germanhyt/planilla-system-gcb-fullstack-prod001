@@ -23,7 +23,7 @@ def test_crud_sede_geocerca(client, H, ids):
 
 
 def test_tipo_contrato_configurable_y_override_jornada(client, H, ids):
-    r = client.post("/tipos-contrato", headers=H["rrhh"], json={"codigo": "PT60", "nombre": "PT 60", "horas_mes": 60,
+    r = client.post("/tipos-contrato", headers=H["admin"], json={"codigo": "PT60", "nombre": "PT 60", "horas_mes": 60,
                                                                  "jornada_diaria_min": 180, "es_part_time": True})
     assert r.status_code == 201
     t = client.post("/trabajadores", headers=H["rrhh"], json={

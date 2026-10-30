@@ -11,7 +11,7 @@ BASE: dict = {
                       "turno_cuenta_dia_inicio": True},
     "periodo": {"tipo": "mes_calendario", "por": "dia_operativo"},
     "horas_extra": {"solo_preprogramadas": True, "destino_default": "pago",
-                    "exceso_no_programado": "bandeja_jefe", "regularizacion_auditada": True,
+                    "exceso_no_programado": "bandeja_jefe", "regularizacion_auditada": True, "pct_pago_mixto": 50,
                     "sobretasas": [{"hasta_horas": 2, "pct": 25}, {"hasta_horas": None, "pct": 35}]},
     "part_time": {"alerta_promedio_diario_horas": 4, "ventana": "semanal", "bloqueante": False},
     "nocturno": {"inicio": "22:00", "fin": "06:00", "siempre_calcular": True, "mostrar_sobretasa_separada": False},
@@ -47,6 +47,7 @@ class HorasExtra(BaseModel):
     exceso_no_programado: Literal["bandeja_jefe"]
     regularizacion_auditada: bool
     sobretasas: list[Sobretasa]
+    pct_pago_mixto: float = Field(50, ge=0, le=100)  # destino mixto sin horas_pago explícitas: % a pago, resto a bolsa
 
 
 class PartTime(BaseModel):
@@ -93,6 +94,18 @@ def deep_merge(base: dict, over: dict) -> dict:
     out = copy.deepcopy(base)
     for k, v in (over or {}).items():
         out[k] = deep_merge(out[k], v) if isinstance(v, dict) and isinstance(out.get(k), dict) else v
+    return out
+
+
+def diff(antes: dict, despues: dict, ruta: str = "") -> list[dict]:
+    """Diferencias hoja a hoja entre dos configuraciones efectivas: [{ruta, antes, despues}]."""
+    out = []
+    for k in sorted(set(antes) | set(despues)):
+        a, d, r = antes.get(k), despues.get(k), f"{ruta}.{k}" if ruta else k
+        if isinstance(a, dict) and isinstance(d, dict):
+            out += diff(a, d, r)
+        elif a != d:
+            out.append({"ruta": r, "antes": a, "despues": d})
     return out
 
 

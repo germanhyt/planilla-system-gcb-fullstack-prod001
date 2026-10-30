@@ -38,7 +38,7 @@ def test_usuarios_y_auditoria_restringidos(client, H):
 
 
 def test_rule_set_solo_admin_escribe(client, H, ids):
-    body = {"empresa_id": ids["emp"]["CAVAS"], "valid_from": "2030-01-01", "config": {}}
+    body = {"empresa_id": ids["emp"]["CAVAS"], "valid_from": "2030-01-01", "config": {}, "motivo": "permiso"}
     assert client.post("/rule-sets", headers=H["rrhh"], json=body).status_code == 403
     assert client.get("/rule-sets", headers=H["jefe"]).status_code == 200
     assert client.get("/rule-sets", headers=H["trabajador"]).status_code == 403
