@@ -197,7 +197,8 @@ def registrar_descanso(
         trab = db.query(Trabajador).filter(Trabajador.id == data.trabajador_id).first()
         if not trab or trab.unidad_id != user.unidad_id:
             raise HTTPException(403, "Solo puede registrar descansos de su unidad")
-    
+    from ..cierre import exigir_abierto_trabajador
+    exigir_abierto_trabajador(db, data.trabajador_id, data.fecha.strftime("%Y-%m"))
     try:
         movimiento = crear_movimiento_banco(
             db,

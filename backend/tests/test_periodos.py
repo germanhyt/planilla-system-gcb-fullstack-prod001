@@ -8,7 +8,7 @@ def test_cerrar_periodo(client, H, ids):
     
     resp = client.post(
         "/periodos/cerrar",
-        json={"empresa_id": empresa_id, "periodo": "2026-09"},
+        json={"empresa_id": empresa_id, "periodo": "2026-09", "confirmar": True},
         headers=H["admin"],
     )
     assert resp.status_code == 200
@@ -23,13 +23,13 @@ def test_cerrar_periodo_duplicado(client, H, ids):
     
     client.post(
         "/periodos/cerrar",
-        json={"empresa_id": empresa_id, "periodo": "2026-08"},
+        json={"empresa_id": empresa_id, "periodo": "2026-08", "confirmar": True},
         headers=H["admin"],
     )
     
     resp = client.post(
         "/periodos/cerrar",
-        json={"empresa_id": empresa_id, "periodo": "2026-08"},
+        json={"empresa_id": empresa_id, "periodo": "2026-08", "confirmar": True},
         headers=H["admin"],
     )
     assert resp.status_code == 400
@@ -41,7 +41,7 @@ def test_reabrir_periodo_admin(client, H, ids):
     
     cierre_resp = client.post(
         "/periodos/cerrar",
-        json={"empresa_id": empresa_id, "periodo": "2026-07"},
+        json={"empresa_id": empresa_id, "periodo": "2026-07", "confirmar": True},
         headers=H["admin"],
     )
     if "id" not in cierre_resp.json():
@@ -64,7 +64,7 @@ def test_reabrir_periodo_rrhh_no_autorizado(client, H, ids):
     
     cierre_resp = client.post(
         "/periodos/cerrar",
-        json={"empresa_id": empresa_id, "periodo": "2026-06"},
+        json={"empresa_id": empresa_id, "periodo": "2026-06", "confirmar": True},
         headers=H["rrhh"],
     )
     if cierre_resp.status_code != 200:
@@ -88,7 +88,7 @@ def test_historial_cierres(client, H, ids):
     
     client.post(
         "/periodos/cerrar",
-        json={"empresa_id": empresa_id, "periodo": "2026-05"},
+        json={"empresa_id": empresa_id, "periodo": "2026-05", "confirmar": True},
         headers=H["admin"],
     )
     
@@ -109,7 +109,7 @@ def test_trabajador_no_puede_cerrar(client, H, ids):
     """Trabajador no puede cerrar periodos."""
     resp = client.post(
         "/periodos/cerrar",
-        json={"empresa_id": ids["emp"]["CAVAS"], "periodo": "2026-04"},
+        json={"empresa_id": ids["emp"]["CAVAS"], "periodo": "2026-04", "confirmar": True},
         headers=H["trabajador"],
     )
     assert resp.status_code == 403

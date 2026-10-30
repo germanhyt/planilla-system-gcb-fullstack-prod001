@@ -233,5 +233,6 @@ def justificar_falta(
     """Justificar falta (implementación pendiente)."""
     if user.rol not in ("jefe", "rrhh", "admin"):
         raise HTTPException(403, "No autorizado")
-    
+    from ..cierre import exigir_abierto_trabajador
+    exigir_abierto_trabajador(db, data.trabajador_id, data.dia.strftime("%Y-%m"))
     return {"trabajador_id": data.trabajador_id, "dia": data.dia.isoformat()}

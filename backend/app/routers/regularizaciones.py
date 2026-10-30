@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from ..audit import audit
+from ..cierre import exigir_abierto
 from ..db import get_db
 from ..deps import current_user
 from ..models import Asistencia, BancoHorasCompensatorias, RegularizacionHE, Trabajador, Usuario
@@ -73,6 +74,9 @@ def decidir_regularizacion(
     trabajador = db.query(Trabajador).get(reg.trabajador_id)
     if u.rol == "jefe" and trabajador.unidad_id != u.unidad_id:
         raise HTTPException(403, "Solo puede regularizar trabajadores de su unidad")
+    asi_lock = db.get(Asistencia, reg.asistencia_id)
+    exigir_abierto(db, trabajador.empresa_id,
+                   (asi_lock.dia_operativo if asi_lock else reg.creado_en.date()).strftime("%Y-%m"))
     
     if decision.aprobar and not decision.destino:
         from .bandeja import destino_default

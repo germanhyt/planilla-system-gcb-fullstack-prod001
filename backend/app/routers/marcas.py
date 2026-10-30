@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from zoneinfo import ZoneInfo
 
 from ..audit import audit
+from ..cierre import exigir_abierto_ts
 from ..db import get_db
 from ..deps import require
 from ..engine import calcular_distancia, get_dia_operativo
@@ -69,7 +70,8 @@ def registrar_marca(marca_in: MarcaIn, request: Request, db: Session = Depends(g
         validacion_estado, distancia_m, sede_id = validar_geocerca(db, trabajador.id, marca_in.lat, marca_in.lng)
     
     ts_servidor = datetime.now(timezone.utc)
-    
+    exigir_abierto_ts(db, trabajador, ts_servidor)
+
     marca = Marca(
         trabajador_id=trabajador.id,
         tipo=marca_in.tipo,
@@ -116,7 +118,8 @@ def registrar_marca_manual(
     
     if u.rol == "jefe" and trabajador.unidad_id != u.unidad_id:
         raise HTTPException(403, "Solo puede marcar trabajadores de su unidad")
-    
+    exigir_abierto_ts(db, trabajador, marca_in.ts_servidor)
+
     marca = Marca(
         trabajador_id=marca_in.trabajador_id,
         tipo=marca_in.tipo,

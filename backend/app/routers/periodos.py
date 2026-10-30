@@ -1,167 +1,121 @@
-"""Sprint 3: Cierre y reapertura de periodos contables."""
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import text
+"""Sprint 3: cierre y reapertura de periodos (mes calendario por día operativo).
+
+- GET  /periodos/checklist: pendientes previos (HE sin decidir, excepciones, marcas incompletas, bonos sin aprobar).
+- POST /periodos/cerrar: RRHH/admin. Con pendientes exige `confirmar=true` (si no, 409 con el checklist).
+  Al cerrar se bloquean marcas, regularizaciones y bonos del periodo (409) y la exportación pasa a FINAL.
+- POST /periodos/reabrir/{id}: sólo admin, con motivo; queda en auditoría.
+"""
+from datetime import datetime, timezone
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from ..audit import audit
+from ..cierre import checklist
 from ..db import get_db
 from ..deps import current_user
-from ..models import Asistencia, CierrePeriodo, RegularizacionHE, Trabajador, Usuario
+from ..models import Asistencia, CierrePeriodo, Empresa, Trabajador, Usuario
 from ..schemas import CierrePeriodoIn, ReaperturaPeriodoIn
 
 router = APIRouter(prefix="/periodos", tags=["periodos"])
+PERIODO = r"^\d{4}-(0[1-9]|1[0-2])$"
+
+
+def _ip(req):
+    return req.client.host if req.client else None
+
+
+def _gestor(user: Usuario):
+    if user.rol not in ("rrhh", "admin"):
+        raise HTTPException(403, "No autorizado")
+
+
+def _marcar_asistencias(db: Session, empresa_id: int, periodo: str, cerrado: bool):
+    tids = db.query(Trabajador.id).filter(Trabajador.empresa_id == empresa_id).subquery()
+    db.query(Asistencia).filter(Asistencia.periodo == periodo, Asistencia.trabajador_id.in_(tids)) \
+        .update({Asistencia.periodo_cerrado: cerrado}, synchronize_session=False)
+
+
+def _out(c: CierrePeriodo) -> dict:
+    return {"id": c.id, "empresa_id": c.empresa_id, "periodo": c.periodo, "estado": c.estado,
+            "cerrado_por": c.cerrado_por, "cerrado_en": c.cerrado_en.isoformat() if c.cerrado_en else None,
+            "reabierto_por": c.reabierto_por, "reabierto_en": c.reabierto_en.isoformat() if c.reabierto_en else None,
+            "razon_reapertura": c.razon_reapertura}
+
+
+@router.get("/checklist")
+def ver_checklist(empresa_id: int = Query(...), periodo: str = Query(..., pattern=PERIODO),
+                  db: Session = Depends(get_db), user: Usuario = Depends(current_user)):
+    _gestor(user)
+    if not db.get(Empresa, empresa_id):
+        raise HTTPException(404, "Empresa no encontrada")
+    out = checklist(db, empresa_id, periodo)
+    c = db.query(CierrePeriodo).filter(CierrePeriodo.empresa_id == empresa_id, CierrePeriodo.periodo == periodo).first()
+    out["cierre"] = _out(c) if c else None
+    return out
 
 
 @router.post("/cerrar")
-def cerrar_periodo(
-    data: CierrePeriodoIn,
-    db: Session = Depends(get_db),
-    user: Usuario = Depends(current_user),
-):
-    """
-    Cerrar periodo mensual: bloquea recálculo de asistencia y nuevas marcas para ese mes operativo.
-    Solo RRHH y admin pueden cerrar.
-    """
-    if user.rol not in ("rrhh", "admin"):
-        raise HTTPException(403, "No autorizado")
-    
-    # Verificar que no esté ya cerrado
-    existe = db.query(CierrePeriodo).filter(
-        CierrePeriodo.empresa_id == data.empresa_id,
-        CierrePeriodo.periodo == data.periodo,
-        CierrePeriodo.estado == "cerrado"
-    ).first()
-    
-    if existe:
+def cerrar_periodo(data: CierrePeriodoIn, request: Request, db: Session = Depends(get_db),
+                   user: Usuario = Depends(current_user)):
+    """Cierra el mes operativo de una empresa. Con pendientes exige confirmación explícita."""
+    _gestor(user)
+    if not db.get(Empresa, data.empresa_id):
+        raise HTTPException(404, "Empresa no encontrada")
+    cierre = db.query(CierrePeriodo).filter(CierrePeriodo.empresa_id == data.empresa_id,
+                                            CierrePeriodo.periodo == data.periodo).first()
+    if cierre and cierre.estado == "cerrado":
         raise HTTPException(400, f"Periodo {data.periodo} ya está cerrado para empresa {data.empresa_id}")
-    
-    # Verificar que no haya regularizaciones pendientes
-    pendientes = db.query(RegularizacionHE).join(Asistencia).filter(
-        Asistencia.periodo == data.periodo,
-        RegularizacionHE.estado == "pendiente"
-    ).count()
-    
-    if pendientes > 0:
-        raise HTTPException(
-            400, 
-            f"Hay {pendientes} regularizaciones pendientes. Debe resolverlas antes de cerrar el periodo."
-        )
-    
-    # Crear cierre
-    cierre = CierrePeriodo(
-        empresa_id=data.empresa_id,
-        periodo=data.periodo,
-        cerrado_por=user.id,
-        estado="cerrado"
-    )
-    db.add(cierre)
-    
-    # Marcar todas las asistencias de ese periodo como cerradas
-    # Usar un subquery para evitar el error de join() con update()
-    trabajador_ids_subq = db.query(Trabajador.id).filter(
-        Trabajador.empresa_id == data.empresa_id
-    ).subquery()
-    
-    db.query(Asistencia).filter(
-        Asistencia.periodo == data.periodo,
-        Asistencia.trabajador_id.in_(trabajador_ids_subq)
-    ).update({Asistencia.periodo_cerrado: True}, synchronize_session=False)
-    
+    chk = checklist(db, data.empresa_id, data.periodo)
+    if chk["total_pendientes"] and not data.confirmar:
+        raise HTTPException(409, {"mensaje": f"Hay {chk['total_pendientes']} pendientes; revise el checklist y confirme",
+                                  "conteos": chk["conteos"]})
+    antes = _out(cierre) if cierre else None
+    if cierre:  # re-cierre tras una reapertura: se reutiliza la fila (único empresa+periodo), el historial queda en auditoría
+        cierre.estado, cierre.cerrado_por, cierre.cerrado_en = "cerrado", user.id, datetime.now(timezone.utc)
+    else:
+        cierre = CierrePeriodo(empresa_id=data.empresa_id, periodo=data.periodo, cerrado_por=user.id, estado="cerrado")
+        db.add(cierre)
+    _marcar_asistencias(db, data.empresa_id, data.periodo, True)
+    db.flush()
+    audit(db, user.id, "cerrar_periodo", "cierre_periodo", cierre.id, antes,
+          {"periodo": data.periodo, "empresa_id": data.empresa_id, "confirmado_con_pendientes": bool(chk["total_pendientes"]),
+           "pendientes": chk["conteos"]}, _ip(request))
     db.commit()
     db.refresh(cierre)
-    
-    audit(db, user.id, "cerrar_periodo", "cierre_periodo", str(cierre.id), 
-          None, {"periodo": data.periodo, "empresa_id": data.empresa_id})
-    
-    return {
-        "id": cierre.id,
-        "periodo": cierre.periodo,
-        "empresa_id": cierre.empresa_id,
-        "estado": cierre.estado,
-        "cerrado_en": cierre.cerrado_en.isoformat()
-    }
+    return _out(cierre) | {"pendientes": chk["conteos"]}
 
 
 @router.post("/reabrir/{cierre_id}")
-def reabrir_periodo(
-    cierre_id: int,
-    data: ReaperturaPeriodoIn,
-    db: Session = Depends(get_db),
-    user: Usuario = Depends(current_user),
-):
-    """
-    Reabrir periodo cerrado con razón auditada. Solo admin puede reabrir.
-    Crea nueva versión del cierre para mantener historial.
-    """
+def reabrir_periodo(cierre_id: int, data: ReaperturaPeriodoIn, request: Request, db: Session = Depends(get_db),
+                    user: Usuario = Depends(current_user)):
+    """Reabre un periodo cerrado. Sólo admin, con motivo (mín. 10 caracteres) auditado."""
     if user.rol != "admin":
         raise HTTPException(403, "Solo admin puede reabrir periodos")
-    
-    cierre = db.query(CierrePeriodo).filter(CierrePeriodo.id == cierre_id).first()
+    cierre = db.get(CierrePeriodo, cierre_id)
     if not cierre:
         raise HTTPException(404, "Cierre no encontrado")
-    
     if cierre.estado != "cerrado":
         raise HTTPException(400, "El periodo ya está reabierto")
-    
-    # Actualizar el cierre existente
-    cierre.estado = "reabierto"
-    cierre.reabierto_por = user.id
-    cierre.reabierto_en = db.execute(text("SELECT NOW()")).scalar()
-    cierre.razon_reapertura = data.razon_reapertura
-    
-    # Desmarcar asistencias como cerradas para permitir recálculo
-    trabajador_ids_subq = db.query(Trabajador.id).filter(
-        Trabajador.empresa_id == cierre.empresa_id
-    ).subquery()
-    
-    db.query(Asistencia).filter(
-        Asistencia.periodo == cierre.periodo,
-        Asistencia.trabajador_id.in_(trabajador_ids_subq)
-    ).update({Asistencia.periodo_cerrado: False}, synchronize_session=False)
-    
+    antes = _out(cierre)
+    cierre.estado, cierre.reabierto_por = "reabierto", user.id
+    cierre.reabierto_en, cierre.razon_reapertura = datetime.now(timezone.utc), data.razon_reapertura
+    _marcar_asistencias(db, cierre.empresa_id, cierre.periodo, False)
+    audit(db, user.id, "reabrir_periodo", "cierre_periodo", cierre.id, antes,
+          {"estado": "reabierto", "razon": data.razon_reapertura, "periodo": cierre.periodo,
+           "empresa_id": cierre.empresa_id}, _ip(request))
     db.commit()
     db.refresh(cierre)
-    
-    audit(db, user.id, "reabrir_periodo", "cierre_periodo", str(cierre.id),
-          {"estado": "cerrado"}, {"estado": "reabierto", "razon": data.razon_reapertura})
-    
-    return {
-        "id": cierre.id,
-        "periodo": cierre.periodo,
-        "empresa_id": cierre.empresa_id,
-        "estado": cierre.estado,
-        "reabierto_en": cierre.reabierto_en.isoformat() if cierre.reabierto_en else None,
-        "razon_reapertura": cierre.razon_reapertura
-    }
+    return _out(cierre)
 
 
 @router.get("/historial")
-def historial_cierres(
-    empresa_id: int = None,
-    db: Session = Depends(get_db),
-    user: Usuario = Depends(current_user),
-):
-    """Historial de cierres y reaperturas (con auditoría)."""
-    if user.rol not in ("rrhh", "admin"):
-        raise HTTPException(403, "No autorizado")
-    
+def historial_cierres(empresa_id: Optional[int] = None, db: Session = Depends(get_db),
+                      user: Usuario = Depends(current_user)):
+    """Estado actual de cierres por empresa+periodo (el detalle de cada cierre/reapertura está en auditoría)."""
+    _gestor(user)
     q = db.query(CierrePeriodo)
     if empresa_id:
         q = q.filter(CierrePeriodo.empresa_id == empresa_id)
-    
-    cierres = q.order_by(CierrePeriodo.cerrado_en.desc()).all()
-    
-    return [
-        {
-            "id": c.id,
-            "empresa_id": c.empresa_id,
-            "periodo": c.periodo,
-            "estado": c.estado,
-            "cerrado_por": c.cerrado_por,
-            "cerrado_en": c.cerrado_en.isoformat(),
-            "reabierto_por": c.reabierto_por,
-            "reabierto_en": c.reabierto_en.isoformat() if c.reabierto_en else None,
-            "razon_reapertura": c.razon_reapertura
-        }
-        for c in cierres
-    ]
+    return [_out(c) for c in q.order_by(CierrePeriodo.periodo.desc(), CierrePeriodo.id.desc()).all()]
