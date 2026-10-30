@@ -52,7 +52,9 @@ AREAS_CAVAS = [("Salón", "Mozo/a", 10), ("Bar", "Bartender", 6), ("Cocina", "Co
 
 # RUC verificado (sprint 5) en consulta pública de padrón SUNAT: GRUPO CORDILLERA BLANCA SOCIEDAD ANONIMA, activo/habido.
 RUC_GCBSA = "20605363882"
-# CAVAS: PENDIENTE confirmar con el PO (búsqueda ambigua); se mantiene placeholder.
+# CAVAS: confirmado por el PO (2026-10-30): CAVAS REUNIDAS PERU SOCIEDAD ANONIMA; el codigo corto "CAVAS" se mantiene.
+RUC_CAVAS = "20610414983"
+RAZON_CAVAS = "CAVAS REUNIDAS PERU S.A."
 
 
 def rs_vigente(db, empresa_id, dia):
@@ -87,7 +89,7 @@ def seed_config(db, demo: bool = False):
                            refrigerio_min=45)  # PO: refrigerio 45 min también para PT85/PT102
           for c, n, h, j, pt in [("FT", "Tiempo completo", 208, 480, False), ("PT85", "Part time 85 h/mes", 85, 240, True),
                                  ("PT102", "Part time 102 h/mes", 102, 240, True)]}
-    cav = get_or_create(db, Empresa, {"codigo": "CAVAS"}, razon_social="CAVAS SAC", ruc="20000000001")
+    cav = get_or_create(db, Empresa, {"codigo": "CAVAS"}, razon_social=RAZON_CAVAS, ruc=RUC_CAVAS)
     gcb = get_or_create(db, Empresa, {"codigo": "GCBSA"}, razon_social="GCB SA", ruc=RUC_GCBSA)
     if demo:
         for e, cfg in ((cav, CAVAS_DEMO), (gcb, GCB_SA)):
