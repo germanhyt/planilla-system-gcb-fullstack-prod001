@@ -4,7 +4,8 @@
   empieza el 31 cuenta en el mes del 31).
 - Recargo nocturno: se muestra aparte sólo si la empresa lo tiene configurado
   (rule_set `nocturno.mostrar_sobretasa_separada`: CAVAS sí, GCB SA no). Las horas 22-06 siempre se calculan.
-- Bono nocturno 3 AM: concepto interno; se exporta la cantidad aprobada, el monto lo define administración.
+- Bono nocturno 3 AM: concepto interno (no es el recargo legal); se exporta la cantidad y el monto (S/) aprobados
+  por administración como ingreso separado (concepto B3AM).
 - Jefe: sólo su unidad. RRHH/admin: todo.
 """
 import csv
@@ -35,7 +36,7 @@ from ..models import (
 router = APIRouter(prefix="/reportes", tags=["reportes"])
 
 PERIODO = r"^\d{4}-(0[1-9]|1[0-2])$"
-LAYOUT_VERSION = "PC-ASIS-1.0"
+LAYOUT_VERSION = "PC-ASIS-1.1"  # 1.1: columna `monto` (S/) en B3AM
 # Catálogo de conceptos de la interfaz con Planilla Core (ver docs/interfaz-planilla-core.md).
 CONCEPTOS = {
     "HN": ("Horas normales trabajadas", "HORAS", "INFORMATIVO"),
@@ -44,7 +45,8 @@ CONCEPTOS = {
     "HE35": ("Horas extra 35%", "HORAS", "REMUNERATIVO"),
     "HNOC": ("Horas nocturnas 22:00-06:00", "HORAS", "INFORMATIVO"),
     "RNOC": ("Recargo nocturno (sólo empresas con sobretasa separada)", "HORAS", "REMUNERATIVO"),
-    "B3AM": ("Bono nocturno 3 AM (monto lo define administración)", "CANTIDAD", "INGRESO_INTERNO"),
+    "B3AM": ("Bono nocturno 3 AM (cantidad de cierres; monto S/ aprobado por administración)", "CANTIDAD",
+             "INGRESO_INTERNO"),
     "BHSAL": ("Saldo banco de horas al cierre del mes", "HORAS", "INFORMATIVO"),
 }
 COLUMNAS = [
@@ -52,6 +54,7 @@ COLUMNAS = [
     ("horas_normales", "Horas normales"), ("tardanza_min", "Tardanza (min)"), ("horas_extra_25", "HE 25%"),
     ("horas_extra_35", "HE 35%"), ("horas_nocturnas", "Horas nocturnas 22-06"),
     ("recargo_nocturno_horas", "Recargo nocturno (h)"), ("bono_3am", "Bono 3 AM (cant.)"),
+    ("bono_3am_monto", "Bono 3 AM (S/)"),
     ("banco_horas_mes", "Banco horas mov. mes"), ("banco_horas_saldo", "Banco horas saldo"), ("ausencias", "Ausencias"),
 ]
 
@@ -103,18 +106,21 @@ def _consolidado_mensual_data(db: Session, periodo: str, empresa_id: Optional[in
     empresas = {e.id: e for e in db.query(Empresa).all()}
     flags: dict[int, bool] = {}
     data: dict[int, dict] = {}
+
+    def nueva(t):
+        if t.empresa_id not in flags:
+            flags[t.empresa_id] = recargo_separado(db, t.empresa_id, desde)
+        emp = empresas.get(t.empresa_id)
+        data[t.id] = {
+            "trabajador_id": t.id, "codigo": t.codigo, "nombres": t.nombres, "apellidos": t.apellidos,
+            "trabajador": f"{t.nombres} {t.apellidos}", "doc_tipo": t.doc_tipo, "doc_numero": t.doc_numero,
+            "empresa_id": t.empresa_id, "empresa": emp.codigo if emp else None, "unidad_id": t.unidad_id,
+            "horas_trabajadas": 0.0, "tardanza_min": 0, "horas_extra_25": 0.0, "horas_extra_35": 0.0,
+            "horas_nocturnas": 0.0, "ausencias": 0, "dias_trabajados": 0, "_recargo": flags[t.empresa_id]}
+        return data[t.id]
+
     for t, a in q.order_by(Trabajador.codigo, Asistencia.dia_operativo).all():
-        r = data.get(t.id)
-        if r is None:
-            if t.empresa_id not in flags:
-                flags[t.empresa_id] = recargo_separado(db, t.empresa_id, desde)
-            emp = empresas.get(t.empresa_id)
-            r = data[t.id] = {
-                "trabajador_id": t.id, "codigo": t.codigo, "nombres": t.nombres, "apellidos": t.apellidos,
-                "trabajador": f"{t.nombres} {t.apellidos}", "doc_tipo": t.doc_tipo, "doc_numero": t.doc_numero,
-                "empresa_id": t.empresa_id, "empresa": emp.codigo if emp else None, "unidad_id": t.unidad_id,
-                "horas_trabajadas": 0.0, "tardanza_min": 0, "horas_extra_25": 0.0, "horas_extra_35": 0.0,
-                "horas_nocturnas": 0.0, "ausencias": 0, "dias_trabajados": 0, "_recargo": flags[t.empresa_id]}
+        r = data.get(t.id) or nueva(t)
         r["horas_trabajadas"] += float(a.horas_trabajadas or 0)
         r["tardanza_min"] += int(a.tardanza_min or 0)
         r["horas_extra_25"] += float(a.horas_extra_25 or 0)
@@ -124,11 +130,24 @@ def _consolidado_mensual_data(db: Session, periodo: str, empresa_id: Optional[in
             r["dias_trabajados"] += 1
         else:
             r["ausencias"] += 1
+    # Trabajadores con bono 3 AM aprobado pero sin asistencia en el mes: igual deben salir (ingreso separado).
+    qb = db.query(Trabajador).join(BonoNocturno, BonoNocturno.trabajador_id == Trabajador.id).filter(
+        BonoNocturno.periodo == periodo, BonoNocturno.estado == "aprobado")
+    if empresa_id:
+        qb = qb.filter(Trabajador.empresa_id == empresa_id)
+    if unidad_id:
+        qb = qb.filter(Trabajador.unidad_id == unidad_id)
+    if trabajador_id:
+        qb = qb.filter(Trabajador.id == trabajador_id)
+    for t in qb.order_by(Trabajador.codigo).all():
+        if t.id not in data:
+            nueva(t)
     if not data:
         return []
     tids = list(data)
-    bonos = dict(db.query(BonoNocturno.trabajador_id, BonoNocturno.cantidad).filter(
-        BonoNocturno.periodo == periodo, BonoNocturno.estado == "aprobado", BonoNocturno.trabajador_id.in_(tids)).all())
+    bonos = {tid: (cant, monto) for tid, cant, monto in db.query(
+        BonoNocturno.trabajador_id, BonoNocturno.cantidad, BonoNocturno.monto).filter(
+        BonoNocturno.periodo == periodo, BonoNocturno.estado == "aprobado", BonoNocturno.trabajador_id.in_(tids)).all()}
     saldo: dict[int, float] = {}
     for m in db.query(BancoHorasCompensatorias).filter(
             BancoHorasCompensatorias.trabajador_id.in_(tids), BancoHorasCompensatorias.fecha_movimiento <= hasta
@@ -148,11 +167,13 @@ def _consolidado_mensual_data(db: Session, periodo: str, empresa_id: Optional[in
         for k in ("horas_trabajadas", "horas_extra_25", "horas_extra_35", "horas_nocturnas"):
             r[k] = _r2(r[k])
         r["recargo_nocturno_horas"] = r["horas_nocturnas"] if r.pop("_recargo") else None
-        r["bono_3am"] = int(bonos.get(tid, 0))
+        cant, monto = bonos.get(tid, (0, None))
+        r["bono_3am"] = int(cant or 0)
+        r["bono_3am_monto"] = _r2(monto)
         r["banco_horas_mes"] = _r2(mov.get(tid, 0))
         r["banco_horas_saldo"] = _r2(saldo.get(tid, 0))
         out.append(r)
-    return out
+    return sorted(out, key=lambda x: x["codigo"])
 
 
 def _tabla_csv(registros: list[dict]) -> str:
@@ -195,7 +216,7 @@ def consolidado_mensual(
     registros = _consolidado_mensual_data(db, periodo, empresa_id, unidad_id, trabajador_id)
     if formato == "json":
         claves = ("horas_trabajadas", "horas_normales", "tardanza_min", "horas_extra_25", "horas_extra_35",
-                  "horas_nocturnas", "bono_3am", "banco_horas_mes", "banco_horas_saldo")
+                  "horas_nocturnas", "bono_3am", "bono_3am_monto", "banco_horas_mes", "banco_horas_saldo")
         totales = {"total_trabajadores": len(registros)} | {
             f"total_{k}": _r2(sum(r[k] for r in registros)) for k in claves}
         totales["total_recargo_nocturno_horas"] = _r2(sum(r["recargo_nocturno_horas"] or 0 for r in registros))
@@ -234,7 +255,8 @@ def conceptos_remunerativos(
     trabajadores = []
     for r in _consolidado_mensual_data(db, periodo, empresa_id, None, None):
         c = {"trabajador_codigo": r["codigo"], "trabajador_nombre": r["trabajador"], "he_25_horas": r["horas_extra_25"],
-             "he_35_horas": r["horas_extra_35"], "bono_3am_cantidad": r["bono_3am"]}
+             "he_35_horas": r["horas_extra_35"], "bono_3am_cantidad": r["bono_3am"],
+             "bono_3am_monto": r["bono_3am_monto"]}
         if r["recargo_nocturno_horas"] is not None:
             c["recargo_nocturno_horas"] = r["recargo_nocturno_horas"]
         trabajadores.append(c)
@@ -250,12 +272,13 @@ def _lineas(registros: list[dict]) -> list[dict]:
             valores.append(("RNOC", r["recargo_nocturno_horas"]))
         valores += [("B3AM", r["bono_3am"]), ("BHSAL", r["banco_horas_saldo"])]
         for cod, cant in valores:
-            if not cant:
+            monto = r["bono_3am_monto"] if cod == "B3AM" else None
+            if not cant and not monto:
                 continue
             desc, unidad, tipo = CONCEPTOS[cod]
             lineas.append({"trabajador_codigo": r["codigo"], "doc_tipo": r["doc_tipo"], "doc_numero": r["doc_numero"],
                            "trabajador_nombre": r["trabajador"], "concepto_codigo": cod, "concepto_tipo": tipo,
-                           "unidad": unidad, "cantidad": cant})
+                           "unidad": unidad, "cantidad": cant, "monto": monto})
     return lineas
 
 
@@ -268,7 +291,7 @@ def export_planilla_core(
     db: Session = Depends(get_db),
     user: Usuario = Depends(current_user),
 ):
-    """Archivo de interfaz versionado para Planilla Core (layout `PC-ASIS-1.0`, docs/interfaz-planilla-core.md).
+    """Archivo de interfaz versionado para Planilla Core (layout `PC-ASIS-1.1`, docs/interfaz-planilla-core.md).
 
     Periodo cerrado -> estado FINAL. Abierto -> se exporta marcado PRELIMINAR (o 409 si `solo_cerrado=true`).
     Cada exportación queda en auditoría y numera su versión (v1, v2...) por empresa+periodo.
@@ -304,9 +327,10 @@ def export_planilla_core(
     buf = StringIO()
     w = csv.writer(buf, delimiter=";", lineterminator="\n")
     w.writerow(["layout_version", "empresa_codigo", "empresa_ruc", "periodo", "estado", "version_archivo",
-                "trabajador_codigo", "doc_tipo", "doc_numero", "concepto_codigo", "concepto_tipo", "unidad", "cantidad"])
+                "trabajador_codigo", "doc_tipo", "doc_numero", "concepto_codigo", "concepto_tipo", "unidad", "cantidad",
+                "monto"])
     for li in lineas:
         w.writerow([LAYOUT_VERSION, empresa.codigo, empresa.ruc, periodo, estado, version, li["trabajador_codigo"],
                     li["doc_tipo"], li["doc_numero"], li["concepto_codigo"], li["concepto_tipo"], li["unidad"],
-                    li["cantidad"]])
+                    li["cantidad"], "" if li["monto"] is None else f"{li['monto']:.2f}"])
     return Response(content=buf.getvalue(), media_type="text/csv; charset=utf-8", headers=headers)
