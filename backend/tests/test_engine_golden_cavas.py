@@ -290,7 +290,8 @@ def test_plan_semanal_tiene_prioridad_y_vigencia_respeta_fechas(db, cavas):
 
 @pytest.mark.parametrize("contrato,ref_contrato,horas", [
     ("FT", 45, 8.25),    # 08:00-17:00 sin refrigerio en la plantilla -> 45 del contrato
-    ("PT85", 0, 9.0),    # parámetro abierto para PT: 0 = no se descuenta
+    ("PT85", 45, 8.25),  # decisión PO: PT también 45 min
+    ("PT102", 0, 9.0),   # sigue configurable: 0 = no se descuenta
     ("PT102", 30, 8.5),
 ])
 def test_refrigerio_por_tipo_de_contrato_cuando_la_plantilla_no_lo_define(db, cavas, contrato, ref_contrato, horas):

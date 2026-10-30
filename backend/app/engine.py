@@ -143,7 +143,7 @@ def resolver_turno_dia(db: Session, trabajador_id: int, dia: date) -> tuple[Opti
 def refrigerio_efectivo(db: Session, trabajador: Trabajador, plantilla: TurnoPlantilla) -> int:
     """Refrigerio de la plantilla si está definido; si no, el del tipo de contrato (45 por defecto).
 
-    Decisión pendiente para PT: se parametriza en tipo_contrato.refrigerio_min (0 = no se descuenta).
+    Decisión PO: PT85/PT102 = 45 min (igual que FT); sigue configurable en tipo_contrato.refrigerio_min (0 = no se descuenta).
     """
     if plantilla.refrigerio_min is not None:
         return plantilla.refrigerio_min
