@@ -1,9 +1,36 @@
-# Prod (futuro, NO desplegado): detrás de nginx_proxy + acme-companion
+# Prod (piloto Cavas): detrás de nginx_proxy (nginxproxy/nginx-proxy) + acme-companion ya existentes en el host.
+# Uso:  cp .env.example .env  (completar secretos)  &&  docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+# - Solo 'web' se une a la red del proxy; publica la PWA y hace de reverse proxy de /api -> api:8000 (misma origin, sin CORS).
+# - Ningún puerto publicado en el host (ni db, ni redis, ni api).
+# - Variables obligatorias (":?" falla si faltan): WEB_HOST, LETSENCRYPT_EMAIL, DB_PASSWORD, JWT_SECRET.
+x-restart: &restart {restart: unless-stopped}
 services:
-  web:
-    environment: {VIRTUAL_HOST: "${WEB_HOST}", LETSENCRYPT_HOST: "${WEB_HOST}", VIRTUAL_PORT: "80"}
-    networks: [default, proxy]
+  db:
+    <<: *restart
+    environment: {POSTGRES_PASSWORD: "${DB_PASSWORD:?definir DB_PASSWORD en .env}"}
+  redis:
+    <<: *restart
   api:
+    <<: *restart
+    build: {context: ./backend, args: {DEV: "0"}}          # sin dependencias de desarrollo
+    environment:
+      AUTO_SEED: "0"                                      # nunca semilla ficticia en prod
+      DATABASE_URL: "postgresql+psycopg://planilla:${DB_PASSWORD:?}@db:5432/planilla"
+      JWT_SECRET: "${JWT_SECRET:?definir JWT_SECRET en .env}"
     networks: [default]
+  worker:
+    <<: *restart
+    build: {context: ./backend, args: {DEV: "0"}}
+    environment:
+      DATABASE_URL: "postgresql+psycopg://planilla:${DB_PASSWORD:?}@db:5432/planilla"
+      JWT_SECRET: "${JWT_SECRET:?}"
+  web:
+    <<: *restart
+    environment:
+      VIRTUAL_HOST: "${WEB_HOST:?definir WEB_HOST (p. ej. planilla.gcb.pe)}"
+      VIRTUAL_PORT: "80"
+      LETSENCRYPT_HOST: "${WEB_HOST:?}"
+      LETSENCRYPT_EMAIL: "${LETSENCRYPT_EMAIL:?definir LETSENCRYPT_EMAIL}"
+    networks: [default, proxy]
 networks:
   proxy: {external: true, name: "${PROXY_NETWORK:-nginx-proxy}"}
