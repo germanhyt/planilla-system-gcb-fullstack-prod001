@@ -194,72 +194,34 @@ def reporte_part_time_riesgo(
     db: Session = Depends(get_db),
     user: Usuario = Depends(current_user),
 ):
-    """Part-time con riesgo normativo (promedio semanal >4h/día en alguna semana del periodo)."""
+    """Part-time (PT85/PT102) con promedio semanal > umbral (4 h) por día TRABAJADO.
+
+    Criterio unificado con la bandeja: promedio = horas de la semana (lun-dom) / días con asistencia.
+    La alerta es informativa: no bloquea marcas, cálculo ni cierre.
+    """
     if user.rol not in ("rrhh", "admin"):
         raise HTTPException(403, "No autorizado")
-    
-    # Parse periodo
+    from sqlalchemy import true
+
+    from .bandeja import alertas_pt
+
     anio, mes = map(int, periodo.split("-"))
-    fecha_inicio = date(anio, mes, 1)
-    if mes == 12:
-        fecha_fin = date(anio + 1, 1, 1)
-    else:
-        fecha_fin = date(anio, mes + 1, 1)
-    
-    # Obtener trabajadores part-time (tipo_contrato PT)
-    from ..models import TipoContrato
-    tipos_pt = db.query(TipoContrato).filter(
-        TipoContrato.codigo.in_(["PT85", "PT102"])
-    ).all()
-    pt_ids = [t.id for t in tipos_pt]
-    
-    trabajadores_pt = db.query(Trabajador).filter(
-        Trabajador.tipo_contrato_id.in_(pt_ids)
-    ).all()
-    
-    riesgos = []
-    
-    for trab in trabajadores_pt:
-        # Analizar por semana dentro del periodo
-        dia_actual = fecha_inicio
-        while dia_actual < fecha_fin:
-            # Calcular inicio y fin de la semana
-            inicio_semana = dia_actual - timedelta(days=dia_actual.weekday())
-            fin_semana = inicio_semana + timedelta(days=7)
-            
-            # Obtener asistencias de esa semana
-            asistencias = db.query(Asistencia).filter(
-                and_(
-                    Asistencia.trabajador_id == trab.id,
-                    Asistencia.dia_operativo >= inicio_semana,
-                    Asistencia.dia_operativo < fin_semana
-                )
-            ).all()
-            
-            if asistencias:
-                total_horas = sum(a.horas_trabajadas for a in asistencias)
-                dias_trabajados = len(asistencias)
-                promedio_diario = total_horas / 7 if dias_trabajados > 0 else 0
-                
-                # Alerta si promedio semanal > 4h/día
-                if promedio_diario > 4.0:
-                    tipo_contrato = db.query(TipoContrato).get(trab.tipo_contrato_id)
-                    riesgos.append({
-                        "trabajador_id": trab.id,
-                        "codigo": trab.codigo,
-                        "nombres": trab.nombres,
-                        "apellidos": trab.apellidos,
-                        "semana_inicio": inicio_semana.isoformat(),
-                        "dias_trabajados": dias_trabajados,
-                        "total_horas_semana": round(total_horas, 2),
-                        "promedio_diario": round(promedio_diario, 2),
-                        "tipo_contrato": tipo_contrato.codigo if tipo_contrato else None
-                    })
-            
-            # Saltar a la siguiente semana
-            dia_actual = fin_semana
-    
-    return riesgos
+    desde = date(anio, mes, 1)
+    hasta = (date(anio + 1, 1, 1) if mes == 12 else date(anio, mes + 1, 1)) - timedelta(days=1)
+    return [{
+        "trabajador_id": a["trabajador"].id,
+        "codigo": a["trabajador"].codigo,
+        "nombres": a["trabajador"].nombres,
+        "apellidos": a["trabajador"].apellidos,
+        "semana_inicio": a["semana"].isoformat(),
+        "dias_trabajados": a["dias"],
+        "total_horas_semana": a["total"],
+        "promedio_diario": a["promedio"],
+        "umbral": a["umbral"],
+        "criterio": "horas_semana / dias_trabajados",
+        "bloqueante": False,
+        "tipo_contrato": a["contrato"],
+    } for a in sorted(alertas_pt(db, true(), desde, hasta), key=lambda x: (x["semana"], x["trabajador"].codigo))]
 
 
 @router.post("/justificar-falta")

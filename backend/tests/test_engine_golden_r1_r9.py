@@ -246,19 +246,11 @@ def test_r5_destino_compensacion_crea_credito(client, H, ids, db):
 # ============================================================================
 
 def test_r6_pt_riesgo_promedio_4h():
-    """R6: PT con promedio >4h/dia genera alerta no bloqueante."""
-    # Esta logica esta en excepciones dashboard
-    # Aqui validamos el calculo de promedio
-    # 5 dias x 5h = 25h / 7 dias = 3.57 < 4 (OK)
-    horas_semana = 5 * 5.0
-    promedio = horas_semana / 7
-    assert promedio < 4.0
-    
-    # 5 dias x 6h = 30h / 7 dias = 4.28 > 4 (RIESGO)
-    horas_semana = 5 * 6.0
-    promedio = horas_semana / 7
-    assert promedio > 4.0
-
+    """R6: PT con promedio semanal >4 h por DÍA TRABAJADO genera alerta no bloqueante (criterio unificado)."""
+    # 5 días x 4h = 20h / 5 días trabajados = 4.0 -> no supera el umbral
+    assert (5 * 4.0) / 5 <= 4.0
+    # 3 días x 5h = 15h / 3 días trabajados = 5.0 -> alerta (con /7 habría sido 2.14 y no alertaba)
+    assert (3 * 5.0) / 3 > 4.0
 
 # ============================================================================
 # R7: Horas nocturnas 22:00-06:00, recargo, bono 3 AM
