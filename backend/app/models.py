@@ -276,7 +276,12 @@ class FaltaJustificada(Base):
     motivo: Mapped[str] = mapped_column(String(50))  # permiso|licencia_medica|vacaciones|otro
     descripcion: Mapped[Optional[str]] = mapped_column(Text)
     adjunto_url: Mapped[Optional[str]] = mapped_column(String(500))
-    justificado_por: Mapped[int] = mapped_column(ForeignKey("usuario.id"))
+    # Sprint 4: flujo trabajador solicita -> jefe aprueba/rechaza. Registro directo del jefe = aprobada.
+    estado: Mapped[str] = mapped_column(String(20), default="aprobada", server_default="aprobada")  # pendiente|aprobada|rechazada
+    solicitado_por: Mapped[Optional[int]] = mapped_column(ForeignKey("usuario.id"))
+    justificado_por: Mapped[Optional[int]] = mapped_column(ForeignKey("usuario.id"))  # quien decide
+    decidido_en: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    comentario_decision: Mapped[Optional[str]] = mapped_column(Text)
     creado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

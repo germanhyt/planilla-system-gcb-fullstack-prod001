@@ -71,7 +71,8 @@ def test_justificar_falta(client, db, H):
         },
         headers=H["jefe"],
     )
-    assert resp.status_code in (200, 403, 404)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["estado"] == "aprobada"
 
 
 def test_trabajador_no_puede_ver_excepciones(client, H):

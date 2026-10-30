@@ -7,7 +7,8 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..deps import current_user
-from ..models import Asistencia, HorarioPlan, Marca, Trabajador, Usuario
+from ..engine import resolver_turno_dia
+from ..models import Asistencia, FaltaJustificada, Marca, Trabajador, Usuario
 from ..schemas import FaltaJustificadaIn
 
 router = APIRouter(prefix="/excepciones", tags=["excepciones"])
@@ -17,10 +18,11 @@ router = APIRouter(prefix="/excepciones", tags=["excepciones"])
 def listar_faltas_sin_justificar(
     periodo: str = Query(..., pattern=r"^\d{4}-(0[1-9]|1[0-2])$"),
     unidad_id: int | None = None,
+    incluir_justificadas: bool = False,
     db: Session = Depends(get_db),
     user: Usuario = Depends(current_user),
 ):
-    """Faltas sin justificar (días programados sin asistencia registrada)."""
+    """Faltas sin justificar (días con turno sin asistencia). Las aprobadas se omiten salvo incluir_justificadas."""
     if user.rol == "trabajador":
         raise HTTPException(403, "No autorizado")
     
@@ -44,45 +46,33 @@ def listar_faltas_sin_justificar(
     trabajadores = query.all()
     faltas = []
     
+    tids = [t.id for t in trabajadores] or [-1]
+    con_asistencia = {(tid, d) for tid, d in db.query(Asistencia.trabajador_id, Asistencia.dia_operativo).filter(
+        Asistencia.trabajador_id.in_(tids), Asistencia.dia_operativo >= fecha_inicio, Asistencia.dia_operativo < fecha_fin)}
+    justif = {(f.trabajador_id, f.dia): f for f in db.query(FaltaJustificada).filter(
+        FaltaJustificada.trabajador_id.in_(tids), FaltaJustificada.dia >= fecha_inicio, FaltaJustificada.dia < fecha_fin,
+        FaltaJustificada.estado != "rechazada")}
+    faltas = []
     for trab in trabajadores:
-        # Obtener días con horario programado
         dia_actual = fecha_inicio
         while dia_actual < fecha_fin:
-            # Verificar si tiene plan de horario para ese día
-            dia_inicio_semana = dia_actual - timedelta(days=dia_actual.weekday())
-            plan = db.query(HorarioPlan).filter(
-                and_(
-                    HorarioPlan.trabajador_id == trab.id,
-                    HorarioPlan.semana_inicio == dia_inicio_semana
-                )
-            ).order_by(HorarioPlan.version.desc()).first()
-            
-            if plan:
-                dias = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"]
-                dia_semana = dias[dia_actual.weekday()]
-                plantilla_id = getattr(plan, f"{dia_semana}_plantilla_id", None)
-                
-                if plantilla_id:
-                    # Día programado, verificar si hay asistencia
-                    asistencia = db.query(Asistencia).filter(
-                        and_(
-                            Asistencia.trabajador_id == trab.id,
-                            Asistencia.dia_operativo == dia_actual
-                        )
-                    ).first()
-                    
-                    if not asistencia:
-                        faltas.append({
-                            "trabajador_id": trab.id,
-                            "codigo": trab.codigo,
-                            "nombres": trab.nombres,
-                            "apellidos": trab.apellidos,
-                            "dia": dia_actual.isoformat(),
-                            "justificada": False  # TODO: link to justifications table
-                        })
-            
+            # Día con turno (plan semanal o asignación vigente) y sin asistencia = falta
+            plantilla_id, _ = resolver_turno_dia(db, trab.id, dia_actual)
+            if plantilla_id and (trab.id, dia_actual) not in con_asistencia:
+                j = justif.get((trab.id, dia_actual))
+                if not (j and j.estado == "aprobada" and not incluir_justificadas):
+                    faltas.append({
+                        "trabajador_id": trab.id,
+                        "codigo": trab.codigo,
+                        "nombres": trab.nombres,
+                        "apellidos": trab.apellidos,
+                        "dia": dia_actual.isoformat(),
+                        "justificada": bool(j and j.estado == "aprobada"),
+                        "justificacion_id": j.id if j else None,
+                        "justificacion_estado": j.estado if j else None,
+                    })
             dia_actual += timedelta(days=1)
-    
+
     return faltas
 
 
@@ -230,9 +220,8 @@ def justificar_falta(
     db: Session = Depends(get_db),
     user: Usuario = Depends(current_user),
 ):
-    """Justificar falta (implementación pendiente)."""
+    """Compatibilidad Sprint 3: registra (jefe/rrhh/admin) una justificación aprobada. Ver /justificaciones."""
     if user.rol not in ("jefe", "rrhh", "admin"):
         raise HTTPException(403, "No autorizado")
-    from ..cierre import exigir_abierto_trabajador
-    exigir_abierto_trabajador(db, data.trabajador_id, data.dia.strftime("%Y-%m"))
-    return {"trabajador_id": data.trabajador_id, "dia": data.dia.isoformat()}
+    from .justificaciones import out, registrar
+    return out(registrar(db, user, data))
