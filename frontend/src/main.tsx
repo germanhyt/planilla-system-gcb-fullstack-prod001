@@ -59,7 +59,7 @@ function App() {
   if (!getToken() || !me) return <Login onOk={cargar} />
   const r = me.rol; const admin = r === 'admin'; const rrhh = r === 'rrhh' || admin; const jefe = r === 'jefe' || rrhh
   const trabajador = r === 'trabajador' || jefe
-  const menu: [string, string, boolean][] = [['perfil', 'Mi perfil', true], ['marcar', 'Marcar asistencia', trabajador], ['mis-marcas', 'Mis marcas', trabajador], ['marcas', 'Marcas', jefe], ['empresas', 'Empresas', jefe], ['unidades', 'Unidades', jefe], ['sedes', 'Sedes', jefe],
+  const menu: [string, string, boolean][] = [['perfil', 'Mi perfil', true], ['marcar', 'Marcar asistencia', trabajador], ['mis-marcas', 'Mis marcas', r === 'trabajador'], ['marcas', 'Marcas', jefe], ['empresas', 'Empresas', jefe], ['unidades', 'Unidades', jefe], ['sedes', 'Sedes', jefe],
     ['contratos', 'Tipos de contrato', jefe], ['trabajadores', 'Trabajadores', jefe], ['reglas', 'Reglas', jefe]]
   return <div><nav>{menu.filter(m => m[2]).map(([k, l]) => <button key={k} className={vista === k ? 'act' : ''} onClick={() => setVista(k)}>{l}</button>)}
     <span>{me.nombre} ({r})</span><button onClick={() => { localStorage.removeItem('token'); location.reload() }}>Salir</button></nav>

@@ -3,6 +3,15 @@
 Grupo Cordillera Blanca (Perú, `America/Lima`). Base técnica tomada del spike `spike-tareo`:
 FastAPI + PostgreSQL 16 + Redis/RQ (worker) + React/TS/Vite PWA servido por nginx, con Docker Compose.
 
+## Sprint 3 — Vistas de marcas (incremento 0+1)
+- **Auto-seed en dev**: `backend/start.sh` migra y, con `AUTO_SEED=1` (activado en `docker-compose.dev.yml` y `docker-compose.box.yml`),
+  ejecuta `python seed.py --if-empty` (no hace nada si ya hay usuarios). Prod no lo activa.
+- **API**: `GET /marcas/mias?desde=YYYY-MM-DD&hasta=YYYY-MM-DD` (trabajador vinculado) y
+  `GET /marcas/?desde&hasta&trabajador_id&unidad_id` (jefe: solo su unidad; rrhh/admin: todo). Rango por **día operativo**
+  (default últimos 7 días, máx. 93). Cada marca trae `hora_lima`/`ts_lima` (hora servidor en America/Lima), `tipo`, `origen` (gps/qr/manual),
+  `geocerca` (dentro/fuera/sin_gps), `distancia_m`, `dia_operativo` y `corte` (CAVAS 06:00) según el rule_set vigente.
+- **Web**: "Mis marcas" (trabajador) y "Marcas" (jefe/RRHH/admin) con filtros de fecha, unidad y trabajador.
+
 ## Alcance Sprint 2 (Tareo y Asistencia)
 
 **Construido sobre Sprint 1** (PR #1). Implementa el sistema completo de programación de turnos, marcado de asistencia con validación GPS/QR, motor de cálculo diario en RQ worker, y bandeja de regularización para jefes.
