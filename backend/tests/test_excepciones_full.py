@@ -1,7 +1,7 @@
 """Tests completos Sprint 3: Dashboard de excepciones."""
 from datetime import date, timedelta
 
-import pytest
+from zoneinfo import ZoneInfo
 
 
 def test_faltas_sin_justificar_detecta_ausencias(client, H, ids, db):
@@ -9,18 +9,15 @@ def test_faltas_sin_justificar_detecta_ausencias(client, H, ids, db):
     from app.models import HorarioPlan, Trabajador, TurnoPlantilla, Usuario
     
     trabajador = db.query(Trabajador).filter(Trabajador.codigo == "CAV-006").first()
-    if not trabajador:
-        pytest.skip("Trabajador CAV-006 no existe")
+    assert trabajador, "Trabajador CAV-006 no existe"
     
     # Crear plan de horario para una semana
     turno = db.query(TurnoPlantilla).first()
-    if not turno:
-        pytest.skip("No hay turnos plantilla")
+    assert turno, "No hay turnos plantilla"
     
     # Obtener un usuario para creado_por
     usuario = db.query(Usuario).first()
-    if not usuario:
-        pytest.skip("No hay usuarios en BD")
+    assert usuario, "No hay usuarios en BD"
     
     fecha_inicio_semana = date(2026, 10, 20) - timedelta(days=date(2026, 10, 20).weekday())
     plan = HorarioPlan(
@@ -49,8 +46,7 @@ def test_tardanzas_recurrentes_detecta_patron(client, H, ids, db):
     from app.models import Asistencia, Trabajador
     
     trabajador = db.query(Trabajador).filter(Trabajador.codigo == "CAV-007").first()
-    if not trabajador:
-        pytest.skip("Trabajador CAV-007 no existe")
+    assert trabajador, "Trabajador CAV-007 no existe"
     
     # Crear 5 asistencias con tardanza
     for i in range(5):
@@ -93,14 +89,13 @@ def test_marcas_fuera_geocerca(client, H, ids, db):
     from app.models import Marca, Trabajador
     
     trabajador = db.query(Trabajador).filter(Trabajador.codigo == "CAV-008").first()
-    if not trabajador:
-        pytest.skip("Trabajador CAV-008 no existe")
+    assert trabajador, "Trabajador CAV-008 no existe"
     
     # Crear marca fuera de geocerca (distancia > 200m)
     marca = Marca(
         trabajador_id=trabajador.id,
         tipo="entrada",
-        ts_servidor=datetime.now(),
+        ts_servidor=datetime(2025, 6, 12, 10, 0, tzinfo=ZoneInfo("America/Lima")),  # fijo, no now()
         lat=-12.1,
         lng=-77.0,
         distancia_m=500,
@@ -112,7 +107,7 @@ def test_marcas_fuera_geocerca(client, H, ids, db):
     
     # Consultar marcas fuera de geocerca
     resp = client.get(
-        f"/excepciones/marcas-fuera-geocerca?desde={date.today()}&hasta={date.today()}",
+        "/excepciones/marcas-fuera-geocerca?desde=2025-06-12&hasta=2025-06-12",
         headers=H["rrhh"]
     )
     assert resp.status_code == 200
@@ -129,12 +124,10 @@ def test_part_time_riesgo_promedio_semanal(client, H, ids, db):
     
     # Buscar o crear trabajador PT
     tipo_pt = db.query(TipoContrato).filter(TipoContrato.codigo == "PT85").first()
-    if not tipo_pt:
-        pytest.skip("No hay tipo contrato PT85")
+    assert tipo_pt, "No hay tipo contrato PT85"
     
     trabajador = db.query(Trabajador).filter(Trabajador.tipo_contrato_id == tipo_pt.id).first()
-    if not trabajador:
-        pytest.skip("No hay trabajadores PT85")
+    assert trabajador, "No hay trabajadores PT85"
     
     # Crear asistencias que excedan 4h/dia promedio
     # 5 dias x 5h = 25h semana / 7 dias = 3.57 < 4 (NO riesgo)
@@ -175,7 +168,7 @@ def test_excepciones_trabajador_no_autorizado(client, H):
     assert resp.status_code == 403
     
     resp = client.get(
-        f"/excepciones/marcas-fuera-geocerca?desde={date.today()}&hasta={date.today()}",
+        "/excepciones/marcas-fuera-geocerca?desde=2025-06-12&hasta=2025-06-12",
         headers=H["trabajador"]
     )
     assert resp.status_code == 403

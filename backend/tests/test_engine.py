@@ -1,10 +1,14 @@
-"""Tests del motor de cálculo de asistencia. Sprint 2."""
+"""Tests unitarios (funciones puras) del motor de cálculo.
+
+Consolidado de test_engine.py + test_engine_golden_r1_r9.py (cubrían lo mismo dos veces).
+Los casos end-to-end con BD están en test_engine_golden_cavas.py.
+"""
 from datetime import date, datetime, time
 
-from sqlalchemy.orm import Session
+import pytest
 
 from app.engine import (
-    calcular_asistencia_dia,
+    a_lima,
     calcular_distancia,
     calcular_horas_extra,
     calcular_horas_nocturnas,
@@ -12,201 +16,110 @@ from app.engine import (
     calcular_tardanza,
     get_dia_operativo,
     get_periodo_operativo,
+    minutes_to_hours,
+    parse_time,
+    time_to_minutes,
 )
-from app.models import Empresa, Marca, RuleSet, TipoContrato, Trabajador, Unidad
-from app.rules import CAVAS, efectivas
+
+D = date(2025, 3, 3)
+NOC = {"inicio": "22:00", "fin": "06:00"}
+SOBRETASAS = [{"hasta_horas": 2, "tasa": 0.25}, {"tasa": 0.35}]
 
 
-def test_calcular_distancia():
-    """Test de cálculo de distancia haversine."""
-    lat1, lng1 = -9.531119, -77.530517
-    lat2, lng2 = -9.531500, -77.531000
-    
-    dist = calcular_distancia(lat1, lng1, lat2, lng2)
-    assert 40 < dist < 80
+def at(hh, mm=0, dia=D):
+    return datetime.combine(dia, time(hh, mm))
 
 
-def test_dia_operativo_cavas():
-    """Test de día operativo con corte 06:00 (CAVAS)."""
-    ts_antes_corte = datetime(2026, 10, 29, 3, 0)
-    dia_op = get_dia_operativo(ts_antes_corte, "06:00")
-    assert dia_op == date(2026, 10, 28)
-    
-    ts_despues_corte = datetime(2026, 10, 29, 8, 0)
-    dia_op = get_dia_operativo(ts_despues_corte, "06:00")
-    assert dia_op == date(2026, 10, 29)
+@pytest.mark.parametrize("a,b,lo,hi", [
+    ((-9.531119, -77.530517), (-9.531500, -77.531000), 40, 80),
+    ((-12.046374, -77.042793), (-12.056374, -77.052793), 1000, 2000),
+])
+def test_distancia_haversine(a, b, lo, hi):
+    assert lo < calcular_distancia(*a, *b) < hi
+    assert calcular_distancia(*a, *a) == 0
 
 
-def test_dia_operativo_calendario():
-    """Test de día operativo sin corte (GCB SA)."""
-    ts = datetime(2026, 10, 29, 3, 0)
-    dia_op = get_dia_operativo(ts, "00:00")
-    assert dia_op == date(2026, 10, 29)
+def test_helpers_tiempo():
+    assert parse_time("08:30") == time(8, 30)
+    assert [time_to_minutes(time(0)), time_to_minutes(time(8, 30)), time_to_minutes(time(23, 59))] == [0, 510, 1439]
+    assert [minutes_to_hours(120), minutes_to_hours(90), minutes_to_hours(0)] == [2.0, 1.5, 0.0]
 
 
-def test_periodo_operativo_corte():
-    """Test de periodo operativo: marca 03:00 del día 1 pertenece al mes anterior."""
-    dia_op = date(2026, 11, 1)
-    periodo = get_periodo_operativo(dia_op, "06:00")
-    assert periodo == "2026-10"
-    
-    dia_op = date(2026, 11, 2)
-    periodo = get_periodo_operativo(dia_op, "06:00")
-    assert periodo == "2026-11"
+def test_a_lima_normaliza_aware_y_respeta_naive():
+    from zoneinfo import ZoneInfo
+    assert a_lima(datetime(2025, 3, 3, 13, 5, tzinfo=ZoneInfo("UTC"))) == at(8, 5)
+    assert a_lima(at(8, 5)) == at(8, 5)
 
 
-def test_tardanza_umbral_perdona():
-    """Test de tardanza con modo umbral_perdona."""
-    config = {"modo": "umbral_perdona", "minutos": 10}
-    
-    entrada = datetime(2026, 10, 29, 19, 5)
-    tardanza = calcular_tardanza(entrada, time(19, 0), config)
-    assert tardanza == 0
-    
-    entrada = datetime(2026, 10, 29, 19, 15)
-    tardanza = calcular_tardanza(entrada, time(19, 0), config)
-    assert tardanza == 15
+# R1: tolerancia
+@pytest.mark.parametrize("modo,umbral,hh,mm,esperado", [
+    ("umbral_perdona", 10, 7, 50, 0),
+    ("umbral_perdona", 10, 8, 5, 0),
+    ("umbral_perdona", 10, 8, 10, 0),
+    ("umbral_perdona", 10, 8, 15, 15),
+    ("umbral_descuenta_exceso", 10, 8, 10, 0),
+    ("umbral_descuenta_exceso", 10, 8, 15, 5),
+    ("umbral_descuenta_exceso", 10, 8, 20, 10),
+    ("sin_tolerancia", 0, 8, 1, 1),
+    ("sin_tolerancia", 0, 8, 0, 0),
+])
+def test_r1_tardanza(modo, umbral, hh, mm, esperado):
+    assert calcular_tardanza(at(hh, mm), time(8), {"modo": modo, "minutos": umbral}) == esperado
 
 
-def test_tardanza_umbral_descuenta_exceso():
-    """Test de tardanza con modo umbral_descuenta_exceso."""
-    config = {"modo": "umbral_descuenta_exceso", "minutos": 10}
-    
-    entrada = datetime(2026, 10, 29, 19, 15)
-    tardanza = calcular_tardanza(entrada, time(19, 0), config)
-    assert tardanza == 5
+# R2: día operativo
+@pytest.mark.parametrize("ts,corte,dia", [
+    (at(22, 0, date(2025, 3, 2)), "06:00", date(2025, 3, 2)),
+    (at(3, 0), "06:00", date(2025, 3, 2)),      # salida de madrugada -> día anterior
+    (at(5, 59), "06:00", date(2025, 3, 2)),
+    (at(6, 0), "06:00", D),
+    (at(8, 0), "06:00", D),
+    (at(23, 0, date(2025, 3, 2)), "00:00", date(2025, 3, 2)),
+    (at(0, 30), "00:00", D),                    # GCB: día calendario
+])
+def test_r2_dia_operativo(ts, corte, dia):
+    assert get_dia_operativo(ts, corte) == dia
 
 
-def test_tardanza_sin_tolerancia():
-    """Test de tardanza sin tolerancia."""
-    config = {"modo": "sin_tolerancia", "minutos": 0}
-    
-    entrada = datetime(2026, 10, 29, 19, 5)
-    tardanza = calcular_tardanza(entrada, time(19, 0), config)
-    assert tardanza == 5
+# R3: periodo = mes del día operativo (el corte se aplica una sola vez, en get_dia_operativo)
+@pytest.mark.parametrize("corte", ["06:00", "00:00"])
+def test_r3_periodo_es_mes_del_dia_operativo(corte):
+    assert get_periodo_operativo(date(2025, 4, 1), corte) == "2025-04"
+    assert get_periodo_operativo(date(2025, 3, 31), corte) == "2025-03"
+    # Salida 01/04 03:00 con corte 06:00 -> día operativo 31/03 -> periodo marzo
+    assert get_periodo_operativo(get_dia_operativo(datetime(2025, 4, 1, 3), "06:00"), "06:00") == "2025-03"
 
 
-def test_horas_nocturnas():
-    """Test de cálculo de horas nocturnas 22:00-06:00."""
-    config = {"inicio": "22:00", "fin": "06:00"}
-    
-    entrada = datetime(2026, 10, 29, 19, 0)
-    salida = datetime(2026, 10, 30, 2, 0)
-    
-    nocturnas = calcular_horas_nocturnas(entrada, salida, config)
-    assert 3.9 < nocturnas < 4.1
+# R4: HE solo si fueron pre-programadas; 25 % primeras 2 h, 35 % resto
+@pytest.mark.parametrize("trab,prog,he_prog,esperado", [
+    (10.0, 8.0, 0.0, (0.0, 0.0)),
+    (10.0, 8.0, None, (0.0, 0.0)),
+    (10.0, 8.0, 2.0, (2.0, 0.0)),
+    (12.0, 8.0, 2.0, (2.0, 0.0)),   # exceso sobre lo programado no cuenta
+    (12.0, 8.0, 5.0, (2.0, 2.0)),
+    (8.5, 8.0, 3.0, (0.5, 0.0)),    # programó más de lo trabajado
+    (7.0, 8.0, 2.0, (0.0, 0.0)),    # no completó la jornada
+])
+def test_r4_horas_extra(trab, prog, he_prog, esperado):
+    assert calcular_horas_extra(trab, prog, he_prog, SOBRETASAS) == esperado
 
 
-def test_horas_trabajadas():
-    """Test de horas trabajadas con refrigerio."""
-    entrada = datetime(2026, 10, 29, 19, 0)
-    salida = datetime(2026, 10, 30, 2, 0)
-    
-    horas = calcular_horas_trabajadas(entrada, salida, 45)
-    assert 6.2 < horas < 6.3
+# R7: nocturnas 22:00-06:00
+@pytest.mark.parametrize("ent,sal,horas", [
+    (at(22), at(23), 1.0),
+    (at(5), at(7), 1.0),
+    (at(23), at(6, 0, date(2025, 3, 4)), 7.0),
+    (at(18), at(2, 30, date(2025, 3, 4)), 4.5),
+    (at(8), at(17), 0.0),
+])
+def test_r7_horas_nocturnas(ent, sal, horas):
+    assert calcular_horas_nocturnas(ent, sal, NOC) == horas
 
 
-def test_horas_extra_split():
-    """Test de split de horas extra: 25% primeras 2h, 35% resto."""
-    sobretasas = [{"hasta_horas": 2, "pct": 25}, {"hasta_horas": None, "pct": 35}]
-    
-    he_25, he_35 = calcular_horas_extra(10.0, 7.0, 3.0, sobretasas)
-    assert he_25 == 2.0
-    assert he_35 == 1.0
-    
-    he_25, he_35 = calcular_horas_extra(8.5, 7.0, 3.0, sobretasas)
-    assert he_25 == 1.5
-    assert he_35 == 0.0
-
-
-def test_turno_cruza_medianoche(db: Session, unique_id):
-    """Test de turno que cruza medianoche (19:00-02:00)."""
-    empresa = Empresa(codigo=unique_id, razon_social=f"Test{unique_id}", ruc=f"20{unique_id[1:]}111")
-    db.add(empresa)
-    db.flush()
-    
-    rule_set = RuleSet(
-        empresa_id=empresa.id,
-        version=1,
-        valid_from=date(2026, 1, 1),
-        config=CAVAS
-    )
-    db.add(rule_set)
-    db.flush()
-    
-    reglas = efectivas(CAVAS)
-    
-    assert reglas["dia_operativo"]["corte"] == "06:00"
-
-
-def test_calculo_asistencia_completo(db: Session, unique_id):
-    """Test de cálculo completo de asistencia de un día."""
-    empresa = Empresa(codigo=unique_id, razon_social=f"Test{unique_id}", ruc=f"20{unique_id[1:]}111")
-    db.add(empresa)
-    db.flush()
-    
-    unidad = Unidad(empresa_id=empresa.id, codigo="U1", nombre="Unidad 1")
-    db.add(unidad)
-    db.flush()
-    
-    tipo = TipoContrato(
-        codigo=f"FT{unique_id}",
-        nombre="Full Time",
-        horas_mes=208,
-        jornada_diaria_min=480,
-        es_part_time=False,
-        refrigerio_min=45
-    )
-    db.add(tipo)
-    db.flush()
-    
-    trabajador = Trabajador(
-        codigo=f"W{unique_id}1",
-        empresa_id=empresa.id,
-        unidad_id=unidad.id,
-        doc_tipo="DNI",
-        doc_numero=f"{unique_id}12345678",
-        nombres="Juan",
-        apellidos="Test",
-        tipo_contrato_id=tipo.id,
-        fecha_ingreso=date(2026, 1, 1)
-    )
-    db.add(trabajador)
-    db.flush()
-    
-    rule_set = RuleSet(
-        empresa_id=empresa.id,
-        version=1,
-        valid_from=date(2026, 1, 1),
-        config={}
-    )
-    db.add(rule_set)
-    db.flush()
-    
-    dia = date(2026, 10, 29)
-    entrada = Marca(
-        trabajador_id=trabajador.id,
-        tipo="entrada",
-        ts_servidor=datetime(2026, 10, 29, 19, 5),
-        metodo="gps",
-        validacion_estado="ok"
-    )
-    salida = Marca(
-        trabajador_id=trabajador.id,
-        tipo="salida",
-        ts_servidor=datetime(2026, 10, 29, 23, 30),
-        metodo="gps",
-        validacion_estado="ok"
-    )
-    db.add_all([entrada, salida])
-    db.commit()
-    
-    from app.rules import efectivas
-    reglas = efectivas({})
-    
-    resultado = calcular_asistencia_dia(db, trabajador.id, dia, reglas)
-    
-    assert resultado is not None
-    assert resultado["trabajador_id"] == trabajador.id
-    assert resultado["dia_operativo"] == dia
-    assert resultado["horas_trabajadas"] > 0
+@pytest.mark.parametrize("ent,sal,refrigerio,horas", [
+    (at(8), at(17), 45, 8.25),
+    (at(8), at(17), 60, 8.0),
+    (at(8), at(8, 30), 45, 0.0),   # nunca negativo
+])
+def test_horas_trabajadas_descuenta_refrigerio(ent, sal, refrigerio, horas):
+    assert calcular_horas_trabajadas(ent, sal, refrigerio) == horas

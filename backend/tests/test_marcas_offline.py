@@ -31,13 +31,16 @@ def test_idempotencia_no_duplica(client, H, db):
     assert db.query(Marca).filter(Marca.id_idempotente == idem).count() == 1
 
 
-def test_idempotencia_online_sin_offline(client, H):
+def test_idempotencia_online_sin_offline(client, H, db, trab):
     """El front envia siempre el UUID: un reintento online tampoco duplica ni cae en el 400 de 5 min."""
+    # Determinista: libera la ventana anti-duplicado de 5 min (BD de test) en vez de saltar el test.
+    db.query(Marca).filter(Marca.trabajador_id == trab.id, Marca.tipo == "salida",
+                           Marca.ts_servidor > datetime.now(timezone.utc) - timedelta(minutes=10)).delete()
+    db.commit()
     idem = str(uuid.uuid4())
     r1 = client.post("/marcas/", json={"tipo": "salida", "qr_code": "SEDE-SISA-FICT", "id_idempotente": idem},
                      headers=H["trabajador"])
-    if r1.status_code == 400:
-        pytest.skip("ventana de 5 min ocupada por otra prueba")
+    assert r1.status_code == 200, r1.text
     r2 = client.post("/marcas/", json={"tipo": "salida", "qr_code": "SEDE-SISA-FICT", "id_idempotente": idem},
                      headers=H["trabajador"])
     assert r2.status_code == 200 and r2.json()["id"] == r1.json()["id"]

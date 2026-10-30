@@ -28,7 +28,7 @@ def test_listar_tardanzas_recurrentes(client, H):
 
 def test_listar_marcas_fuera_geocerca(client, H):
     """Listar marcas fuera de geocerca."""
-    hoy = date.today()
+    hoy = date(2025, 6, 30)  # rango fijo: no depende del reloj
     hace_30 = hoy - timedelta(days=30)
     
     resp = client.get(
@@ -57,11 +57,9 @@ def test_justificar_falta(client, db, H):
     """Jefe puede justificar falta de trabajador de su unidad."""
     from app.models import Trabajador
     trab = db.query(Trabajador).filter(Trabajador.codigo == "CAV-007").first()
-    if not trab:
-        import pytest
-        pytest.skip("No hay trabajador en semilla")
+    assert trab, "No hay trabajador en semilla"
     
-    dia = date.today() - timedelta(days=5)
+    dia = date(2025, 6, 5)  # fecha fija en periodo abierto (antes: hoy-5, cruzaba meses/cierres)
     
     resp = client.post(
         "/excepciones/justificar-falta",
@@ -74,12 +72,6 @@ def test_justificar_falta(client, db, H):
         headers=H["jefe"],
     )
     assert resp.status_code in (200, 403, 404)
-
-
-def test_justificar_falta_duplicada(client, db, H):
-    """No se puede justificar la misma falta dos veces (stub para futuro)."""
-    import pytest
-    pytest.skip("Endpoint es stub, lógica de duplicados pendiente Sprint 4")
 
 
 def test_trabajador_no_puede_ver_excepciones(client, H):
