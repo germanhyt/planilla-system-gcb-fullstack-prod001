@@ -1,6 +1,8 @@
 """Semilla ficticia y anonimizada (idempotente). Ver README: patrones derivados del Excel de referencia.
-NO contiene nombres, DNI ni sueldos reales. Uso: python seed.py"""
+NO contiene nombres, DNI ni sueldos reales. Uso: python seed.py [--if-empty]
+--if-empty: no hace nada si ya existen usuarios (lo usa start.sh con AUTO_SEED=1 en dev)."""
 import random
+import sys
 from datetime import date, datetime, time, timedelta
 
 from sqlalchemy import select
@@ -178,5 +180,13 @@ def main():
     print(f"Semilla OK: {n} trabajadores ficticios, {marcas_creadas} marcas de muestra, usuarios demo: {', '.join(u.email for u in users.values())}")
 
 
+def base_vacia() -> bool:
+    with SessionLocal() as db:
+        return db.scalar(select(Usuario.id).limit(1)) is None
+
+
 if __name__ == "__main__":
-    main()
+    if "--if-empty" in sys.argv[1:] and not base_vacia():
+        print("Semilla omitida: la base ya tiene datos")
+    else:
+        main()
