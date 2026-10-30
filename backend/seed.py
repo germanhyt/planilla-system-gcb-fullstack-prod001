@@ -50,6 +50,11 @@ AREAS_CAVAS = [("Salón", "Mozo/a", 10), ("Bar", "Bartender", 6), ("Cocina", "Co
                ("Caja", "Cajero/a", 2), ("Seguridad", "Anfitrión/Seguridad", 2), ("Administración", "Supervisor/a", 2)]
 
 
+# RUC verificado (sprint 5) en consulta pública de padrón SUNAT: GRUPO CORDILLERA BLANCA SOCIEDAD ANONIMA, activo/habido.
+RUC_GCBSA = "20605363882"
+# CAVAS: PENDIENTE confirmar con el PO (búsqueda ambigua); se mantiene placeholder.
+
+
 def rs_vigente(db, empresa_id, dia):
     """rule_set vigente al día (si es anterior a todas las vigencias, la primera)."""
     q = select(RuleSet.id).where(RuleSet.empresa_id == empresa_id)
@@ -83,7 +88,7 @@ def seed_config(db, demo: bool = False):
           for c, n, h, j, pt in [("FT", "Tiempo completo", 208, 480, False), ("PT85", "Part time 85 h/mes", 85, 240, True),
                                  ("PT102", "Part time 102 h/mes", 102, 240, True)]}
     cav = get_or_create(db, Empresa, {"codigo": "CAVAS"}, razon_social="CAVAS SAC", ruc="20000000001")
-    gcb = get_or_create(db, Empresa, {"codigo": "GCBSA"}, razon_social="GCB SA", ruc="20000000002")
+    gcb = get_or_create(db, Empresa, {"codigo": "GCBSA"}, razon_social="GCB SA", ruc=RUC_GCBSA)
     if demo:
         for e, cfg in ((cav, CAVAS_DEMO), (gcb, GCB_SA)):
             get_or_create(db, RuleSet, {"empresa_id": e.id, "version": 1}, valid_from=date(2026, 1, 1), config=cfg,
