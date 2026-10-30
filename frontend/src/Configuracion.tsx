@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { api } from './api'
 import { Crud, Campo } from './Crud'
-import { aplicar, CAMPOS_REGLA, Cambio, convertir, erroresPorCampo, leer, validarLocal } from './configLib'
+import { aplicar, CAMPOS_REGLA, Cambio, convertir, erroresGenerales, erroresPorCampo, leer, validarLocal } from './configLib'
 
 const hoyLima = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Lima' })
 const fmt = (v: unknown) => (v === null || v === undefined ? '—' : typeof v === 'object' ? JSON.stringify(v) : String(v))
@@ -67,7 +67,7 @@ function ReglasEmpresa({ admin }: { admin: boolean }) {
         return <label key={c.ruta} title={c.ayuda}>{c.label}
           {Array.isArray(c.tipo) ? <select disabled={!admin} value={String(v ?? '')} onChange={e => set(e.target.value)}>{c.tipo.map(o => <option key={o}>{o}</option>)}</select>
             : c.tipo === 'bool' ? <input type="checkbox" disabled={!admin} checked={Boolean(v)} onChange={e => set(e.target.checked)} />
-              : <input type={c.tipo === 'time' ? 'time' : 'number'} disabled={!admin} value={v == null ? '' : String(v)} onChange={e => set(e.target.value)} />}
+              : <input type={c.tipo === 'time' ? 'time' : 'number'} step={c.tipo === 'number' ? 'any' : undefined} disabled={!admin} value={v == null ? '' : String(v)} onChange={e => set(e.target.value)} />}
           {err(c.ruta)}</label>
       })}
       {admin && <>
@@ -77,7 +77,8 @@ function ReglasEmpresa({ admin }: { admin: boolean }) {
           <button type="button" onClick={publicar} disabled={!cambios}>Publicar versión</button></div>
       </>}
     </form>
-    {msg && <p className="error" role="alert">{msg}</p>}
+    {msg && <div className="error" role="alert"><p>{msg}</p>
+      {erroresGenerales(errores).length > 0 && <ul>{erroresGenerales(errores).map(e => <li key={e}>{e}</li>)}</ul>}</div>}
     {cambios && <div><h3>Cambios contra v{contra ?? '—'}</h3>
       {cambios.length === 0 ? <p>Sin cambios respecto a la versión vigente.</p> :
         <table><thead><tr><th>Regla</th><th>Antes</th><th>Después</th></tr></thead>

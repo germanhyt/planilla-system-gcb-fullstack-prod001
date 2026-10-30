@@ -10,6 +10,11 @@ export const CAMPOS_REGLA: CampoRegla[] = [
   { ruta: 'dia_operativo.corte', label: 'Hora de corte del día', tipo: 'time', ayuda: 'Marcas antes de esta hora cuentan para el día anterior' },
   { ruta: 'horas_extra.destino_default', label: 'Destino HE por defecto', tipo: ['pago', 'compensacion', 'mixto'] },
   { ruta: 'horas_extra.pct_pago_mixto', label: '% a pago en mixto', tipo: 'number', ayuda: 'El resto va a la bolsa de horas' },
+  { ruta: 'horas_extra.sobretasas.0.hasta_horas', label: 'HE 1.er tramo: hasta (h)', tipo: 'number', ayuda: 'Horas extra del día pagadas con el 1.er porcentaje (ley: 2 h)' },
+  { ruta: 'horas_extra.sobretasas.0.pct', label: '% HE 1.er tramo', tipo: 'number', ayuda: 'Mínimo legal 25 %' },
+  { ruta: 'horas_extra.sobretasas.1.pct', label: '% HE 2.º tramo', tipo: 'number', ayuda: 'Mínimo legal 35 %' },
+  { ruta: 'nocturno.inicio', label: 'Nocturno: inicio', tipo: 'time' },
+  { ruta: 'nocturno.fin', label: 'Nocturno: fin', tipo: 'time' },
   { ruta: 'nocturno.mostrar_sobretasa_separada', label: 'Mostrar sobretasa nocturna separada', tipo: 'bool' },
   { ruta: 'part_time.alerta_promedio_diario_horas', label: 'Umbral PT (h promedio/día)', tipo: 'number' },
   { ruta: 'part_time.bloqueante', label: 'Alerta PT bloqueante', tipo: 'bool' },
@@ -52,6 +57,12 @@ export function erroresPorCampo(detail: any): Record<string, string> {
   if (detail && Array.isArray(detail.errores)) return Object.fromEntries(detail.errores.map((e: any) => [e.campo, e.error]))
   if (Array.isArray(detail)) return Object.fromEntries(detail.map((e: any) => [(e.loc || []).filter((x: unknown) => x !== 'body').join('.'), e.msg]))
   return {}
+}
+
+/** Errores que no corresponden a un campo del formulario (p. ej. reglas entre tramos). */
+export function erroresGenerales(errores: Record<string, string>): string[] {
+  const rutas = new Set([...CAMPOS_REGLA.map(c => c.ruta), 'valid_from', 'motivo'])
+  return Object.entries(errores).filter(([k]) => !rutas.has(k)).map(([k, v]) => `${k}: ${v}`)
 }
 
 export function validarLocal(valid_from: string, motivo: string, hoy: string): Record<string, string> {
