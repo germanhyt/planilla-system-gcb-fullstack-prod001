@@ -15,6 +15,7 @@ from app.models import (
     Asistencia,
     Empresa,
     HEProgramada,
+    HorarioAsignacion,
     HorarioPlan,
     Marca,
     RegularizacionHE,
@@ -248,3 +249,64 @@ def test_alerta_part_time_promedio_4h(db, cavas, contrato, horas_dia, dias, aler
     assert bool(out) is alerta
     if alerta:
         assert out[0]["contrato"] == contrato and out[0]["promedio"] == horas_dia and out[0]["dias"] == dias
+
+
+# --- Sprint 4: horario asignado con vigencia + refrigerio por contrato ---------------------------
+def _asignar(db, t, desde, patron, hasta=None):
+    db.add(HorarioAsignacion(trabajador_id=t.id, vigente_desde=desde, vigente_hasta=hasta, patron=patron,
+                             creado_por=db.query(Usuario).first().id))
+    db.flush()
+
+
+def test_asignacion_rotativa_mide_tardanza_y_horas_contra_el_turno_asignado(db, cavas):
+    trabajador, marcar = cavas
+    t = trabajador(None)
+    dia_id = db.query(TurnoPlantilla).filter_by(nombre="08-17", unidad_id=t.unidad_id).one().id
+    noche_id = db.query(TurnoPlantilla).filter_by(nombre="18-02", unidad_id=t.unidad_id).one().id
+    # semana A: L-V 08-17; semana B: L-V 18-02 (rotación de 2 semanas desde LUNES)
+    _asignar(db, t, LUNES, [[dia_id] * 5 + [None, None], [noche_id] * 5 + [None, None]])
+    marcar(t, lima(LUNES, 8, 20), lima(LUNES, 17))                       # sem A: 20 min tarde
+    marcar(t, lima(LUNES, 18, 30, dias=7), lima(LUNES, 2, dias=8))       # sem B: 30 min tarde
+    a = calcular_asistencia_dia(db, t.id, LUNES, REGLAS)
+    b = calcular_asistencia_dia(db, t.id, LUNES + timedelta(days=7), REGLAS)
+    assert (a["turno_plantilla_id"], a["tardanza_min"], a["horas_programadas"]) == (dia_id, 20, 8.0)
+    assert (b["turno_plantilla_id"], b["tardanza_min"], b["horas_programadas"]) == (noche_id, 30, 7.25)
+    # sábado = descanso: sin turno, todo es exceso no programado
+    marcar(t, lima(LUNES, 9, dias=5), lima(LUNES, 11, dias=5))
+    s = calcular_asistencia_dia(db, t.id, LUNES + timedelta(days=5), REGLAS)
+    assert (s["turno_plantilla_id"], s["horas_programadas"], s["exceso_no_programado"]) == (None, 0.0, 2.0)
+
+
+def test_plan_semanal_tiene_prioridad_y_vigencia_respeta_fechas(db, cavas):
+    trabajador, marcar = cavas
+    t = trabajador("dia")   # plan semanal explícito en la semana LUNES
+    noche_id = db.query(TurnoPlantilla).filter_by(nombre="18-02", unidad_id=t.unidad_id).one().id
+    _asignar(db, t, LUNES - timedelta(days=7), [[noche_id] * 7], hasta=LUNES + timedelta(days=7))
+    from app.engine import resolver_turno_dia
+    assert resolver_turno_dia(db, t.id, LUNES)[1] == "plan_semanal"
+    assert resolver_turno_dia(db, t.id, LUNES + timedelta(days=7)) == (noche_id, "asignacion")
+    assert resolver_turno_dia(db, t.id, LUNES + timedelta(days=8)) == (None, "sin_horario")
+
+
+@pytest.mark.parametrize("contrato,ref_contrato,horas", [
+    ("FT", 45, 8.25),    # 08:00-17:00 sin refrigerio en la plantilla -> 45 del contrato
+    ("PT85", 0, 9.0),    # parámetro abierto para PT: 0 = no se descuenta
+    ("PT102", 30, 8.5),
+])
+def test_refrigerio_por_tipo_de_contrato_cuando_la_plantilla_no_lo_define(db, cavas, contrato, ref_contrato, horas):
+    trabajador, marcar = cavas
+    t = trabajador(None, contrato)
+    tc = db.get(TipoContrato, t.tipo_contrato_id)
+    previo = tc.refrigerio_min
+    tc.refrigerio_min = ref_contrato
+    p = TurnoPlantilla(unidad_id=t.unidad_id, nombre="08-17 sin ref", inicio=time(8), fin=time(17), refrigerio_min=None)
+    db.add(p)
+    db.flush()
+    _asignar(db, t, LUNES, [[p.id] * 7])
+    try:
+        marcar(t, lima(LUNES, 8), lima(LUNES, 17))
+        r = calcular_asistencia_dia(db, t.id, LUNES, REGLAS)
+        assert (r["horas_programadas"], r["horas_trabajadas"]) == (horas, horas)
+    finally:
+        tc.refrigerio_min = previo
+        db.commit()

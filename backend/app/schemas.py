@@ -65,7 +65,7 @@ class TurnoPlantillaIn(BaseModel):
     nombre: str
     inicio: time
     fin: time
-    refrigerio_min: int = 0
+    refrigerio_min: Optional[int] = Field(None, ge=0, le=120)  # None = el del tipo de contrato
     activo: bool = True
 
 

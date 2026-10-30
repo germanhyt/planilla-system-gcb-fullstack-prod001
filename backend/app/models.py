@@ -106,7 +106,8 @@ class TurnoPlantilla(Base):
     nombre: Mapped[str] = mapped_column(String(50))
     inicio: Mapped[time] = mapped_column(Time)
     fin: Mapped[time] = mapped_column(Time)
-    refrigerio_min: Mapped[int] = mapped_column(Integer, default=0)
+    # None = se usa el refrigerio del tipo de contrato del trabajador (Sprint 4)
+    refrigerio_min: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     activo: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
@@ -314,3 +315,21 @@ class HEProgramada(Base):
     creado_por: Mapped[int] = mapped_column(ForeignKey("usuario.id"))
     creado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     actualizado_en: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+
+class HorarioAsignacion(Base):
+    """Sprint 4: horario asignado al trabajador con vigencia.
+
+    `patron` es una lista de semanas; cada semana, 7 ids de turno_plantilla (lunes..domingo, null = descanso).
+    Con varias semanas el patrón rota desde la semana de `vigente_desde`. Un HorarioPlan semanal explícito
+    tiene prioridad sobre la asignación (excepción puntual de esa semana).
+    """
+    __tablename__ = "horario_asignacion"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    trabajador_id: Mapped[int] = mapped_column(ForeignKey("trabajador.id"), index=True)
+    vigente_desde: Mapped[date] = mapped_column(Date, index=True)
+    vigente_hasta: Mapped[Optional[date]] = mapped_column(Date)
+    patron: Mapped[list] = mapped_column(JSONT)
+    nota: Mapped[Optional[str]] = mapped_column(Text)
+    creado_por: Mapped[int] = mapped_column(ForeignKey("usuario.id"))
+    creado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

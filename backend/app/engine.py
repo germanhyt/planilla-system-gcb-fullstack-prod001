@@ -6,7 +6,18 @@ from typing import Optional
 from sqlalchemy.orm import Session
 from zoneinfo import ZoneInfo
 
-from .models import Asistencia, HEProgramada, HorarioPlan, Marca, RegularizacionHE, RuleSet, Trabajador, TurnoPlantilla
+from .models import (
+    Asistencia,
+    HEProgramada,
+    HorarioAsignacion,
+    HorarioPlan,
+    Marca,
+    RegularizacionHE,
+    RuleSet,
+    TipoContrato,
+    Trabajador,
+    TurnoPlantilla,
+)
 
 LIMA = ZoneInfo("America/Lima")
 # Ventana máxima para buscar la salida de un turno a partir de su entrada.
@@ -97,6 +108,47 @@ def get_turno_plantilla_dia(plan: HorarioPlan, dia: date) -> Optional[int]:
     dias = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"]
     dia_semana = dias[dia.weekday()]
     return getattr(plan, f"{dia_semana}_plantilla_id", None)
+
+
+def get_asignacion_vigente(db: Session, trabajador_id: int, dia: date) -> Optional[HorarioAsignacion]:
+    """Asignación de horario que cubre el día (la de vigente_desde más reciente)."""
+    return db.query(HorarioAsignacion).filter(
+        HorarioAsignacion.trabajador_id == trabajador_id, HorarioAsignacion.vigente_desde <= dia,
+        (HorarioAsignacion.vigente_hasta.is_(None)) | (HorarioAsignacion.vigente_hasta >= dia),
+    ).order_by(HorarioAsignacion.vigente_desde.desc(), HorarioAsignacion.id.desc()).first()
+
+
+def plantilla_de_asignacion(asig: HorarioAsignacion, dia: date) -> Optional[int]:
+    """Plantilla del día según el patrón (rotación de N semanas desde la semana de vigente_desde)."""
+    patron = asig.patron or []
+    if not patron:
+        return None
+    lunes0 = asig.vigente_desde - timedelta(days=asig.vigente_desde.weekday())
+    lunes = dia - timedelta(days=dia.weekday())
+    semana = patron[((lunes - lunes0).days // 7) % len(patron)]
+    return semana[dia.weekday()] if len(semana) == 7 else None
+
+
+def resolver_turno_dia(db: Session, trabajador_id: int, dia: date) -> tuple[Optional[int], str]:
+    """(plantilla_id, origen). Prioridad: plan semanal explícito > asignación vigente > sin horario."""
+    plan = get_horario_plan_version(db, trabajador_id, dia)
+    if plan:
+        return get_turno_plantilla_dia(plan, dia), "plan_semanal"
+    asig = get_asignacion_vigente(db, trabajador_id, dia)
+    if asig:
+        return plantilla_de_asignacion(asig, dia), "asignacion"
+    return None, "sin_horario"
+
+
+def refrigerio_efectivo(db: Session, trabajador: Trabajador, plantilla: TurnoPlantilla) -> int:
+    """Refrigerio de la plantilla si está definido; si no, el del tipo de contrato (45 por defecto).
+
+    Decisión pendiente para PT: se parametriza en tipo_contrato.refrigerio_min (0 = no se descuenta).
+    """
+    if plantilla.refrigerio_min is not None:
+        return plantilla.refrigerio_min
+    tc = db.get(TipoContrato, trabajador.tipo_contrato_id)
+    return tc.refrigerio_min if tc and tc.refrigerio_min is not None else 45
 
 
 def he_programadas_dia(db: Session, trabajador_id: int, dia: date) -> float:
@@ -215,8 +267,7 @@ def calcular_asistencia_dia(
     corte = reglas["dia_operativo"]["corte"]
     periodo = get_periodo_operativo(dia_operativo, corte)
     
-    plan = get_horario_plan_version(db, trabajador_id, dia_operativo)
-    turno_plantilla_id = get_turno_plantilla_dia(plan, dia_operativo) if plan else None
+    turno_plantilla_id, _origen = resolver_turno_dia(db, trabajador_id, dia_operativo)
     turno_plantilla = db.query(TurnoPlantilla).get(turno_plantilla_id) if turno_plantilla_id else None
     
     dia_inicio = datetime.combine(dia_operativo, parse_time(corte))
@@ -256,7 +307,7 @@ def calcular_asistencia_dia(
             turno_fin_min += 1440
         
         duracion_min = turno_fin_min - turno_inicio_min
-        refrigerio_min = turno_plantilla.refrigerio_min
+        refrigerio_min = refrigerio_efectivo(db, trabajador, turno_plantilla)
         horas_programadas = minutes_to_hours(duracion_min - refrigerio_min)
         
         tardanza_min = calcular_tardanza(entrada_ts, turno_plantilla.inicio, reglas["tolerancia"])

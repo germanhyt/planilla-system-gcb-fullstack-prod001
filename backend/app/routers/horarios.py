@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from ..audit import audit
 from ..db import get_db
 from ..deps import require
+from ..engine import refrigerio_efectivo
 from ..models import HorarioPlan, Trabajador, TurnoPlantilla, Usuario
 from ..schemas import HorarioPlanIn
 
@@ -37,7 +38,7 @@ def validar_alertas(db: Session, plan_in: HorarioPlanIn) -> dict:
                 if fin_min < inicio_min:
                     fin_min += 1440
                 
-                duracion_min = fin_min - inicio_min - plantilla.refrigerio_min
+                duracion_min = fin_min - inicio_min - refrigerio_efectivo(db, trabajador, plantilla)
                 horas_por_dia.append(duracion_min / 60)
                 total_semanal_min += duracion_min
             else:

@@ -3,6 +3,7 @@ from sqlalchemy import text
 
 from .db import engine
 from .routers import (
+    asignaciones,
     auditoria,
     auth,
     banco_horas,
@@ -27,6 +28,7 @@ for rt in [
     bonos.r,
     horarios.r,
     he_programadas.r,
+    asignaciones.r,
     marcas.r,
     regularizaciones.r,
     auditoria.r,
