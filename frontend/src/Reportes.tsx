@@ -8,7 +8,7 @@ const n = (v: number | null | undefined) => (v === null || v === undefined ? 'â€
 interface Fila {
   trabajador_id: number; codigo: string; trabajador: string; empresa: string; horas_trabajadas: number; horas_normales: number
   tardanza_min: number; horas_extra_25: number; horas_extra_35: number; horas_nocturnas: number; recargo_nocturno_horas: number | null
-  bono_3am: number; banco_horas_mes: number; banco_horas_saldo: number; ausencias: number
+  bono_3am: number; bono_3am_monto: number; banco_horas_mes: number; banco_horas_saldo: number; ausencias: number
 }
 interface Resp { periodo: string; desde: string; hasta: string; periodo_cerrado?: boolean; muestra_recargo_nocturno?: boolean; registros: Fila[]; totales: Record<string, number> }
 
@@ -53,13 +53,13 @@ export function Reportes({ rol }: { rol: string }) {
     {err && <p className="err">{err}</p>}{msg && <p style={{ color: '#1b7f3b' }}>{msg}</p>}
     {data && (data.registros.length === 0 ? <p>Sin asistencia registrada en el periodo.</p> :
       <div style={{ overflowX: 'auto' }}><table><thead><tr><th>CÃ³digo</th><th>Trabajador</th><th>Empresa</th><th>H. trabajadas</th><th>H. normales</th><th>Tardanza (min)</th>
-        <th>HE 25%</th><th>HE 35%</th><th>H. nocturnas 22-06</th>{recargo && <th>Recargo nocturno (h)</th>}<th>Bono 3 AM</th><th>Banco h. (mes)</th><th>Banco h. (saldo)</th><th>Ausencias</th></tr></thead>
+        <th>HE 25%</th><th>HE 35%</th><th>H. nocturnas 22-06</th>{recargo && <th>Recargo nocturno (h)</th>}<th>Bono 3 AM</th><th>Bono 3 AM (S/)</th><th>Banco h. (mes)</th><th>Banco h. (saldo)</th><th>Ausencias</th></tr></thead>
         <tbody>{data.registros.map(r => <tr key={r.trabajador_id}><td>{r.codigo}</td><td>{r.trabajador}</td><td>{r.empresa}</td><td>{n(r.horas_trabajadas)}</td><td>{n(r.horas_normales)}</td>
           <td>{r.tardanza_min}</td><td>{n(r.horas_extra_25)}</td><td>{n(r.horas_extra_35)}</td><td>{n(r.horas_nocturnas)}</td>{recargo && <td>{n(r.recargo_nocturno_horas)}</td>}
-          <td>{r.bono_3am}</td><td>{n(r.banco_horas_mes)}</td><td>{n(r.banco_horas_saldo)}</td><td>{r.ausencias}</td></tr>)}</tbody>
+          <td>{r.bono_3am}</td><td>{r.bono_3am_monto ? r.bono_3am_monto.toFixed(2) : ''}</td><td>{n(r.banco_horas_mes)}</td><td>{n(r.banco_horas_saldo)}</td><td>{r.ausencias}</td></tr>)}</tbody>
         {t && <tfoot><tr><th colSpan={3}>Total ({t.total_trabajadores})</th><th>{n(t.total_horas_trabajadas)}</th><th>{n(t.total_horas_normales)}</th><th>{t.total_tardanza_min}</th>
           <th>{n(t.total_horas_extra_25)}</th><th>{n(t.total_horas_extra_35)}</th><th>{n(t.total_horas_nocturnas)}</th>{recargo && <th>{n(t.total_recargo_nocturno_horas)}</th>}
-          <th>{t.total_bono_3am}</th><th>{n(t.total_banco_horas_mes)}</th><th>{n(t.total_banco_horas_saldo)}</th><th></th></tr></tfoot>}
+          <th>{t.total_bono_3am}</th><th>{Number(t.total_bono_3am_monto || 0).toFixed(2)}</th><th>{n(t.total_banco_horas_mes)}</th><th>{n(t.total_banco_horas_saldo)}</th><th></th></tr></tfoot>}
       </table></div>)}
   </section>
 }
