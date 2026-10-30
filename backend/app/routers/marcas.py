@@ -1,15 +1,18 @@
 """API de marcas (check-in/out) con validación GPS/QR. Sprint 2."""
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import and_
 from sqlalchemy.orm import Session
+from zoneinfo import ZoneInfo
 
 from ..audit import audit
 from ..db import get_db
 from ..deps import require
-from ..engine import calcular_distancia
-from ..models import Marca, Sede, Trabajador, Usuario
+from ..engine import calcular_distancia, get_dia_operativo
+from ..models import Marca, RuleSet, Sede, Trabajador, Usuario
+from ..rules import efectivas
 from ..schemas import MarcaIn, MarcaManualIn
 
 r = APIRouter(prefix="/marcas", tags=["marcas"])
@@ -76,7 +79,7 @@ def registrar_marca(marca_in: MarcaIn, request: Request, db: Session = Depends(g
         lng=marca_in.lng,
         distancia_m=distancia_m,
         sede_id=sede_id,
-        metodo="gps",
+        metodo="qr" if marca_in.qr_code else "gps",
         qr_code=marca_in.qr_code,
         validacion_estado=validacion_estado
     )
@@ -180,3 +183,128 @@ def listar_marcas(
         "distancia_m": float(m.distancia_m) if m.distancia_m else None,
         "razon_manual": m.razon_manual
     } for m in marcas]
+
+
+# ---------------------------------------------------------------------------
+# Sprint 3: vistas de registros de marcas
+# ---------------------------------------------------------------------------
+LIMA = ZoneInfo("America/Lima")
+
+
+def _corte_empresa(db: Session, empresa_id: int, dia: date, cache: dict) -> str:
+    """Hora de corte del día operativo según el rule_set vigente (CAVAS 06:00, GCB SA 00:00)."""
+    key = (empresa_id, dia)
+    if key not in cache:
+        rs = db.query(RuleSet).filter(RuleSet.empresa_id == empresa_id, RuleSet.valid_from <= dia) \
+            .order_by(RuleSet.valid_from.desc()).first()
+        corte = "00:00"
+        if rs:
+            try:
+                corte = efectivas(rs.config or {})["dia_operativo"].get("corte") or "00:00"
+            except Exception:  # noqa: BLE001 - config inválida: se asume día calendario
+                corte = "00:00"
+        cache[key] = corte
+    return cache[key]
+
+
+def _origen(m: Marca) -> str:
+    if m.metodo == "manual":
+        return "manual"
+    return "qr" if (m.metodo == "qr" or m.qr_code) else "gps"
+
+
+def _geocerca(m: Marca) -> str:
+    if m.lat is None or m.lng is None:
+        return "sin_gps"
+    return "fuera" if m.validacion_estado == "fuera_geocerca" else "dentro"
+
+
+def _parse_fecha(v: Optional[str], nombre: str) -> Optional[date]:
+    if not v:
+        return None
+    try:
+        return date.fromisoformat(v)
+    except ValueError as e:
+        raise HTTPException(422, f"{nombre} debe tener formato YYYY-MM-DD") from e
+
+
+def _consultar(db: Session, trabajadores: dict[int, Trabajador], desde: Optional[str], hasta: Optional[str]) -> list[dict]:
+    """Marcas de los trabajadores dados, filtradas por día operativo [desde, hasta] (fechas Lima)."""
+    hoy = datetime.now(LIMA).date()
+    d_hasta = _parse_fecha(hasta, "hasta") or hoy
+    d_desde = _parse_fecha(desde, "desde") or (d_hasta - timedelta(days=6))
+    if d_desde > d_hasta:
+        raise HTTPException(422, "'desde' no puede ser posterior a 'hasta'")
+    if (d_hasta - d_desde).days > 92:
+        raise HTTPException(422, "El rango máximo es de 93 días")
+    if not trabajadores:
+        return []
+    # ventana amplia en hora Lima: el corte máximo es < 24h, el día operativo 'hasta' termina antes de hasta+2 00:00
+    ini = datetime.combine(d_desde, time(0), LIMA)
+    fin = datetime.combine(d_hasta + timedelta(days=2), time(0), LIMA)
+    marcas = db.query(Marca).filter(Marca.trabajador_id.in_(list(trabajadores)), Marca.ts_servidor >= ini,
+                                    Marca.ts_servidor < fin).order_by(Marca.ts_servidor.desc()).all()
+    cache: dict = {}
+    out = []
+    for m in marcas:
+        t = trabajadores[m.trabajador_id]
+        ts_lima = m.ts_servidor.astimezone(LIMA)
+        corte = _corte_empresa(db, t.empresa_id, ts_lima.date(), cache)
+        dia_op = get_dia_operativo(ts_lima.replace(tzinfo=None), corte)
+        if not (d_desde <= dia_op <= d_hasta):
+            continue
+        out.append({
+            "id": m.id,
+            "trabajador_id": t.id,
+            "trabajador_codigo": t.codigo,
+            "trabajador_nombre": f"{t.nombres} {t.apellidos}",
+            "unidad_id": t.unidad_id,
+            "tipo": m.tipo,
+            "ts_servidor": m.ts_servidor.isoformat(),
+            "ts_lima": ts_lima.isoformat(),
+            "fecha_lima": ts_lima.date().isoformat(),
+            "hora_lima": ts_lima.strftime("%H:%M:%S"),
+            "origen": _origen(m),
+            "geocerca": _geocerca(m),
+            "distancia_m": float(m.distancia_m) if m.distancia_m is not None else None,
+            "validacion_estado": m.validacion_estado,
+            "dia_operativo": dia_op.isoformat(),
+            "corte": corte,
+            "razon_manual": m.razon_manual,
+        })
+    return out
+
+
+@r.get("/mias")
+def mis_marcas(desde: Optional[str] = None, hasta: Optional[str] = None, db: Session = Depends(get_db),
+               u: Usuario = Depends(require("trabajador", "jefe", "rrhh", "admin"))):
+    """Marcas del trabajador vinculado al usuario, por rango de día operativo (default: últimos 7 días)."""
+    t = db.query(Trabajador).filter(Trabajador.usuario_id == u.id).first()
+    if not t:
+        raise HTTPException(404, "Usuario no vinculado a trabajador")
+    return _consultar(db, {t.id: t}, desde, hasta)
+
+
+@r.get("/")
+def marcas_por_trabajador_fecha(desde: Optional[str] = None, hasta: Optional[str] = None,
+                                trabajador_id: Optional[int] = None, unidad_id: Optional[int] = None,
+                                db: Session = Depends(get_db), u: Usuario = Depends(require("jefe", "rrhh", "admin"))):
+    """Marcas por trabajador/fecha. Jefe: solo su unidad. RRHH/admin: todo."""
+    if u.rol == "jefe":
+        if not u.unidad_id:
+            raise HTTPException(403, "Jefe sin unidad asignada")
+        if unidad_id is not None and unidad_id != u.unidad_id:
+            raise HTTPException(403, "Solo puede ver trabajadores de su unidad")
+        unidad_id = u.unidad_id
+    q = db.query(Trabajador)
+    if unidad_id is not None:
+        q = q.filter(Trabajador.unidad_id == unidad_id)
+    if trabajador_id is not None:
+        t = db.get(Trabajador, trabajador_id)
+        if not t:
+            raise HTTPException(404, "Trabajador no encontrado")
+        if u.rol == "jefe" and t.unidad_id != u.unidad_id:
+            raise HTTPException(403, "Solo puede ver trabajadores de su unidad")
+        q = q.filter(Trabajador.id == trabajador_id)
+    trabajadores = {t.id: t for t in q.all()}
+    return _consultar(db, trabajadores, desde, hasta)

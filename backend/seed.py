@@ -6,6 +6,7 @@ import sys
 from datetime import date, datetime, time, timedelta
 
 from sqlalchemy import select
+from zoneinfo import ZoneInfo
 
 from app.config import settings
 from app.db import SessionLocal
@@ -176,6 +177,26 @@ def main():
                 )
                 marcas_creadas += 1
     
+    # Sprint 3: marcas del trabajador demo (trabajador@demo.gcb.pe → CAV-007) para "Mis marcas":
+    # turno nocturno que cruza el corte 06:00 (salida 02:xx pertenece al día operativo anterior), una por QR y una fuera de geocerca.
+    lima = ZoneInfo("America/Lima")
+    demo = db.scalar(select(Trabajador).where(Trabajador.codigo == "CAV-007"))
+    if demo:
+        for dia_offset in range(1, 6):
+            dia = hoy - timedelta(days=dia_offset)
+            ent = datetime.combine(dia, time(19, rnd.randint(0, 10)), lima)
+            sal = datetime.combine(dia + timedelta(days=1), time(2, rnd.randint(0, 20)), lima)
+            fuera = dia_offset == 3
+            for tipo, ts in (("entrada", ent), ("salida", sal)):
+                qr = tipo == "entrada" and dia_offset == 2
+                get_or_create(db, Marca, {"trabajador_id": demo.id, "ts_servidor": ts}, tipo=tipo,
+                              lat=float(s_cav.lat) + (0.003 if fuera and tipo == "salida" else 0.00005),
+                              lng=float(s_cav.lng), distancia_m=335.0 if fuera and tipo == "salida" else 6.0, sede_id=s_cav.id,
+                              metodo="qr" if qr else "gps", qr_code="SEDE-SISA-FICT" if qr else None,
+                              validacion_estado="fuera_geocerca" if fuera and tipo == "salida" else "ok",
+                              sincronizado_offline=False)
+                marcas_creadas += 1
+
     db.commit()
     print(f"Semilla OK: {n} trabajadores ficticios, {marcas_creadas} marcas de muestra, usuarios demo: {', '.join(u.email for u in users.values())}")
 
