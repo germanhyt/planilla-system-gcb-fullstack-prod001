@@ -6,6 +6,7 @@ from .routers import (
     auditoria,
     auth,
     banco_horas,
+    bandeja,
     bonos,
     excepciones,
     horarios,
@@ -31,6 +32,8 @@ for rt in [
     periodos.router,
     excepciones.router,
     banco_horas.router,
+    bandeja.router,
+    bandeja.banco,
 ]:
     app.include_router(rt)
 

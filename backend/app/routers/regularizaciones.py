@@ -75,7 +75,12 @@ def decidir_regularizacion(
         raise HTTPException(403, "Solo puede regularizar trabajadores de su unidad")
     
     if decision.aprobar and not decision.destino:
-        raise HTTPException(400, "Debe especificar destino (pago/compensacion/mixto) al aprobar")
+        from .bandeja import destino_default
+        asi_def = db.get(Asistencia, reg.asistencia_id)
+        decision.destino = destino_default(db, trabajador.empresa_id, asi_def.dia_operativo if asi_def else reg.creado_en.date())
+    if decision.aprobar and decision.destino == "mixto" and decision.horas_pago is not None and not (
+            0 < decision.horas_pago < float(reg.horas_exceso)):
+        raise HTTPException(400, "horas_pago debe estar entre 0 y las horas de exceso (exclusivo)")
     
     antes = {
         "estado": reg.estado,
@@ -104,7 +109,7 @@ def decidir_regularizacion(
                 # Crear crédito en banco de horas compensatorias
                 ultimo = db.query(BancoHorasCompensatorias).filter(
                     BancoHorasCompensatorias.trabajador_id == trabajador.id
-                ).order_by(BancoHorasCompensatorias.creado_en.desc()).first()
+                ).order_by(BancoHorasCompensatorias.creado_en.desc(), BancoHorasCompensatorias.id.desc()).first()
                 
                 saldo_anterior = float(ultimo.saldo_nuevo) if ultimo else 0.0
                 saldo_nuevo = saldo_anterior + float(reg.horas_exceso)
@@ -130,8 +135,8 @@ def decidir_regularizacion(
             
             elif decision.destino == "mixto":
                 # 50% a pago, 50% a compensación
-                horas_pago = float(reg.horas_exceso) / 2
-                horas_comp = float(reg.horas_exceso) / 2
+                horas_pago = decision.horas_pago if decision.horas_pago is not None else float(reg.horas_exceso) / 2
+                horas_comp = float(reg.horas_exceso) - horas_pago
                 
                 # Pago
                 if horas_pago <= 2:
@@ -143,7 +148,7 @@ def decidir_regularizacion(
                 # Compensación
                 ultimo = db.query(BancoHorasCompensatorias).filter(
                     BancoHorasCompensatorias.trabajador_id == trabajador.id
-                ).order_by(BancoHorasCompensatorias.creado_en.desc()).first()
+                ).order_by(BancoHorasCompensatorias.creado_en.desc(), BancoHorasCompensatorias.id.desc()).first()
                 
                 saldo_anterior = float(ultimo.saldo_nuevo) if ultimo else 0.0
                 saldo_nuevo = saldo_anterior + horas_comp

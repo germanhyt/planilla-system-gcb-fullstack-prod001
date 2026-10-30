@@ -35,7 +35,7 @@ def crear_movimiento_banco(
     # Obtener saldo actual
     ultimo = db.query(BancoHorasCompensatorias).filter(
         BancoHorasCompensatorias.trabajador_id == trabajador_id
-    ).order_by(BancoHorasCompensatorias.creado_en.desc()).first()
+    ).order_by(BancoHorasCompensatorias.creado_en.desc(), BancoHorasCompensatorias.id.desc()).first()
     
     saldo_anterior = float(ultimo.saldo_nuevo) if ultimo else 0.0
     
@@ -90,7 +90,7 @@ def consultar_saldo(
     # Obtener último movimiento para saldo actual
     ultimo = db.query(BancoHorasCompensatorias).filter(
         BancoHorasCompensatorias.trabajador_id == trabajador_id
-    ).order_by(BancoHorasCompensatorias.creado_en.desc()).first()
+    ).order_by(BancoHorasCompensatorias.creado_en.desc(), BancoHorasCompensatorias.id.desc()).first()
     
     saldo = ultimo.saldo_nuevo if ultimo else 0.0
     
@@ -119,7 +119,7 @@ def consultar_historial(
     
     movimientos = db.query(BancoHorasCompensatorias).filter(
         BancoHorasCompensatorias.trabajador_id == trabajador_id
-    ).order_by(BancoHorasCompensatorias.creado_en.desc()).limit(limite).all()
+    ).order_by(BancoHorasCompensatorias.creado_en.desc(), BancoHorasCompensatorias.id.desc()).limit(limite).all()
     
     return {
         "trabajador_id": trabajador_id,

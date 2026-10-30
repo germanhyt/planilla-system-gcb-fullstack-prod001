@@ -151,7 +151,8 @@ class MarcaManualIn(BaseModel):
 
 class RegularizacionDecision(BaseModel):
     aprobar: bool
-    destino: Optional[Literal["pago", "compensacion", "mixto"]] = None
+    destino: Optional[Literal["pago", "compensacion", "mixto"]] = None  # None al aprobar = destino_default del rule_set
+    horas_pago: Optional[float] = None  # sólo mixto: horas a pagar (resto a banco). Default 50/50
     observacion: Optional[str] = None
 
 
