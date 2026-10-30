@@ -3,7 +3,7 @@ import copy
 from datetime import date
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 BASE: dict = {
     "tolerancia": {"modo": "umbral_perdona", "minutos": 10},
@@ -36,9 +36,12 @@ class DiaOperativo(BaseModel):
     turno_cuenta_dia_inicio: bool = True
 
 
+HHMM = r"^([01]\d|2[0-3]):[0-5]\d$"
+
+
 class Sobretasa(BaseModel):
-    hasta_horas: Optional[float]
-    pct: float
+    hasta_horas: Optional[float] = Field(None, gt=0, le=12)
+    pct: float = Field(ge=0, le=200)
 
 
 class HorasExtra(BaseModel):
@@ -49,6 +52,18 @@ class HorasExtra(BaseModel):
     sobretasas: list[Sobretasa]
     pct_pago_mixto: float = Field(50, ge=0, le=100)  # destino mixto sin horas_pago explícitas: % a pago, resto a bolsa
 
+    @model_validator(mode="after")
+    def _tramos(self):
+        # Dos tramos (HE25 / HE35): el 1.º con tope de horas, el último abierto. Mínimos legales D.S. 007-2002-TR: 25 % y 35 %.
+        t = self.sobretasas
+        if len(t) != 2 or t[0].hasta_horas is None or t[1].hasta_horas is not None:
+            raise ValueError("sobretasas: se esperan 2 tramos; el 1.º con hasta_horas y el 2.º abierto (hasta_horas null)")
+        if t[0].pct < 25 or t[1].pct < 35:
+            raise ValueError("sobretasas: mínimo legal 25 % (1.er tramo) y 35 % (2.º tramo)")
+        if t[1].pct < t[0].pct:
+            raise ValueError("sobretasas: el 2.º tramo no puede pagar menos que el 1.º")
+        return self
+
 
 class PartTime(BaseModel):
     alerta_promedio_diario_horas: float
@@ -57,10 +72,16 @@ class PartTime(BaseModel):
 
 
 class Nocturno(BaseModel):
-    inicio: str
-    fin: str
+    inicio: str = Field(pattern=HHMM)
+    fin: str = Field(pattern=HHMM)
     siempre_calcular: Literal[True]
     mostrar_sobretasa_separada: bool
+
+    @model_validator(mode="after")
+    def _ventana(self):
+        if self.inicio == self.fin:
+            raise ValueError("nocturno: inicio y fin no pueden ser iguales")
+        return self
 
 
 class Periodo(BaseModel):
