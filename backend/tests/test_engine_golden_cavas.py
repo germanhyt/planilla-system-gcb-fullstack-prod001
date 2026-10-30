@@ -310,3 +310,36 @@ def test_refrigerio_por_tipo_de_contrato_cuando_la_plantilla_no_lo_define(db, ca
     finally:
         tc.refrigerio_min = previo
         db.commit()
+
+
+# --- Sprint 4: recálculo conserva regularizaciones decididas (antes: error de FK) --------------
+@pytest.mark.parametrize("estado", ["aprobado", "rechazado"])
+def test_recalculo_conserva_regularizaciones_decididas(db, cavas, estado):
+    trabajador, marcar = cavas
+    t = trabajador("dia")
+    marcar(t, lima(LUNES, 8), lima(LUNES, 19, 30))
+    recalcular_trabajador_periodo(db, t.id, "2025-03")
+    reg = db.query(RegularizacionHE).filter_by(trabajador_id=t.id).one()
+    reg.estado, reg.destino, reg.observacion = estado, "pago", "decidido por jefe"
+    db.commit()
+    asis_id = reg.asistencia_id
+    recalcular_trabajador_periodo(db, t.id, "2025-03")   # antes: IntegrityError (FK asistencia)
+    regs = db.query(RegularizacionHE).filter_by(trabajador_id=t.id).all()
+    assert [(r.id, r.estado, r.observacion) for r in regs] == [(reg.id, estado, "decidido por jefe")]
+    a = db.query(Asistencia).filter_by(trabajador_id=t.id, dia_operativo=LUNES).one()
+    assert a.id == asis_id and float(a.exceso_no_programado) == 2.5
+
+
+def test_recalculo_regenera_pendientes_al_programar_he(db, cavas):
+    """La pendiente se regenera: si luego el jefe programa las HE, desaparece de la bandeja."""
+    trabajador, marcar = cavas
+    t = trabajador("dia")
+    marcar(t, lima(LUNES, 8), lima(LUNES, 19, 30))
+    recalcular_trabajador_periodo(db, t.id, "2025-03")
+    assert db.query(RegularizacionHE).filter_by(trabajador_id=t.id, estado="pendiente").count() == 1
+    db.add(HEProgramada(trabajador_id=t.id, dia=LUNES, horas=3, creado_por=db.query(Usuario).first().id))
+    db.commit()
+    recalcular_trabajador_periodo(db, t.id, "2025-03")
+    assert db.query(RegularizacionHE).filter_by(trabajador_id=t.id).count() == 0
+    a = db.query(Asistencia).filter_by(trabajador_id=t.id, dia_operativo=LUNES).one()
+    assert (float(a.horas_extra_25), float(a.exceso_no_programado)) == (2.0, 0.0)

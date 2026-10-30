@@ -119,3 +119,24 @@ def historial_cierres(empresa_id: Optional[int] = None, db: Session = Depends(ge
     if empresa_id:
         q = q.filter(CierrePeriodo.empresa_id == empresa_id)
     return [_out(c) for c in q.order_by(CierrePeriodo.periodo.desc(), CierrePeriodo.id.desc()).all()]
+
+@router.post("/recalcular")
+def recalcular(empresa_id: int = Query(...), periodo: str = Query(..., pattern=PERIODO),
+               trabajador_id: Optional[int] = None, db: Session = Depends(get_db),
+               user: Usuario = Depends(current_user)):
+    """Recalcula asistencias del periodo (todos los trabajadores activos o uno). Conserva las
+    regularizaciones ya decididas; 409 si el periodo está cerrado."""
+    from ..cierre import exigir_abierto
+    from ..engine import recalcular_trabajador_periodo
+    _gestor(user)
+    if not db.get(Empresa, empresa_id):
+        raise HTTPException(404, "Empresa no encontrada")
+    exigir_abierto(db, empresa_id, periodo)
+    q = db.query(Trabajador.id).filter(Trabajador.empresa_id == empresa_id)
+    if trabajador_id is not None:
+        q = q.filter(Trabajador.id == trabajador_id)
+    tids = [t for (t,) in q]
+    hechos = sum(1 for tid in tids if recalcular_trabajador_periodo(db, tid, periodo))
+    audit(db, user.id, "recalcular", "periodo", empresa_id, None, {"periodo": periodo, "trabajadores": hechos})
+    db.commit()
+    return {"periodo": periodo, "trabajadores_recalculados": hechos}

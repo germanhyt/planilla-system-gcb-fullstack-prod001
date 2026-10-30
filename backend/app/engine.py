@@ -1,5 +1,5 @@
 """Motor de cálculo de asistencia y horas. Sprint 2."""
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from math import asin, cos, radians, sin, sqrt
 from typing import Optional
 
@@ -339,64 +339,86 @@ def calcular_asistencia_dia(
     }
 
 
-def recalcular_trabajador_periodo(db: Session, trabajador_id: int, periodo: str):
-    """RQ job: recalcula todas las asistencias de un trabajador en un periodo."""
-    from sqlalchemy import and_
+def recalcular_trabajador_periodo(db: Session, trabajador_id: int, periodo: str) -> bool:
+    """Recalcula todas las asistencias de un trabajador en un periodo abierto.
 
+    Idempotente y seguro con regularizaciones ya decididas: las asistencias se actualizan en
+    sitio (no se borran si tienen regularizaciones aprobadas/rechazadas -> sin error de FK) y
+    las decisiones del jefe se conservan; sólo las pendientes se regeneran. Devuelve False si
+    el periodo está cerrado o el trabajador no existe.
+    """
+    from .cierre import esta_cerrado
     from .rules import efectivas
-    
-    trabajador = db.query(Trabajador).get(trabajador_id)
+
+    trabajador = db.get(Trabajador, trabajador_id)
     if not trabajador:
-        return
-    
-    anio, mes = periodo.split("-")
-    fecha_inicio = date(int(anio), int(mes), 1)
-    
-    if mes == "12":
-        fecha_fin = date(int(anio) + 1, 1, 1)
-    else:
-        fecha_fin = date(int(anio), int(mes) + 1, 1)
-    
-    cerrada = db.query(Asistencia).filter(
-        and_(
-            Asistencia.trabajador_id == trabajador_id,
-            Asistencia.periodo == periodo,
-            Asistencia.periodo_cerrado
-        )
-    ).first()
-    
-    if cerrada:
-        return
-    
-    del_periodo = and_(Asistencia.trabajador_id == trabajador_id, Asistencia.periodo == periodo)
-    # Primero las regularizaciones pendientes DEL PERIODO (FK a asistencia); antes se borraban
-    # todas las del trabajador (otros periodos incluidos) y después de la asistencia -> FK error.
-    db.query(RegularizacionHE).filter(
-        RegularizacionHE.estado == "pendiente",
-        RegularizacionHE.asistencia_id.in_(db.query(Asistencia.id).filter(del_periodo)),
-    ).delete(synchronize_session=False)
-    db.query(Asistencia).filter(del_periodo).delete(synchronize_session=False)
-    
-    rule_set = get_rule_set_vigente(db, trabajador.empresa_id, fecha_inicio)
+        return False
+    anio, mes = (int(x) for x in periodo.split("-"))
+    fecha_inicio = date(anio, mes, 1)
+    fecha_fin = date(anio + 1, 1, 1) if mes == 12 else date(anio, mes + 1, 1)
+
+    if esta_cerrado(db, trabajador.empresa_id, periodo) or db.query(Asistencia.id).filter(
+            Asistencia.trabajador_id == trabajador_id, Asistencia.periodo == periodo,
+            Asistencia.periodo_cerrado.is_(True)).first():
+        return False
+
+    existentes = {a.dia_operativo: a for a in db.query(Asistencia).filter(
+        Asistencia.trabajador_id == trabajador_id, Asistencia.periodo == periodo)}
+    ids = [a.id for a in existentes.values()] or [-1]
+    # Sólo se regeneran las pendientes; las decididas se conservan (y su asistencia también).
+    db.query(RegularizacionHE).filter(RegularizacionHE.estado == "pendiente",
+                                      RegularizacionHE.asistencia_id.in_(ids)).delete(synchronize_session=False)
+    decididas = {r.asistencia_id for r in db.query(RegularizacionHE.asistencia_id).filter(
+        RegularizacionHE.asistencia_id.in_(ids))}
+
+    try:
+        rule_set = get_rule_set_vigente(db, trabajador.empresa_id, fecha_inicio)
+    except ValueError:
+        db.rollback()
+        return False  # sin reglas vigentes (p. ej. antes del go-live): no hay nada que calcular
     reglas = efectivas(rule_set.config)
-    
+
     dia_actual = fecha_inicio
     while dia_actual < fecha_fin:
         resultado = calcular_asistencia_dia(db, trabajador_id, dia_actual, reglas)
-        
+        asistencia = existentes.pop(dia_actual, None)
         if resultado:
-            asistencia = Asistencia(**resultado)
-            db.add(asistencia)
+            if asistencia is None:
+                asistencia = Asistencia(**resultado)
+                db.add(asistencia)
+            else:
+                for k, v in resultado.items():
+                    setattr(asistencia, k, v)
+                asistencia.calculado_en = datetime.now(timezone.utc)
             db.flush()
-            
-            if resultado["exceso_no_programado"] > 0:
-                regularizacion = RegularizacionHE(
-                    asistencia_id=asistencia.id,
-                    trabajador_id=trabajador_id,
-                    horas_exceso=resultado["exceso_no_programado"]
-                )
-                db.add(regularizacion)
-        
+            if resultado["exceso_no_programado"] > 0 and asistencia.id not in decididas:
+                db.add(RegularizacionHE(asistencia_id=asistencia.id, trabajador_id=trabajador_id,
+                                        horas_exceso=resultado["exceso_no_programado"]))
+        elif asistencia is not None:
+            existentes[dia_actual] = asistencia  # se evalúa abajo
         dia_actual += timedelta(days=1)
-    
+
+    # Días que ya no generan asistencia: se borran salvo que tengan decisiones (se conservan).
+    for a in existentes.values():
+        if a.id not in decididas:
+            db.delete(a)
     db.commit()
+    return True
+
+
+def _periodos_entre(desde: date, hasta: date) -> list[str]:
+    out, y, m = [], desde.year, desde.month
+    while (y, m) <= (hasta.year, hasta.month):
+        out.append(f"{y:04d}-{m:02d}")
+        y, m = (y + 1, 1) if m == 12 else (y, m + 1)
+    return out
+
+
+def recalcular_rango(db: Session, trabajador_id: int, desde: date, hasta: Optional[date] = None) -> list[str]:
+    """Disparo de recálculo tras cambios de HE programadas u horarios: recalcula los periodos
+    abiertos afectados, sin pasar del mes actual. Devuelve los periodos recalculados."""
+    hoy = date.today()
+    hasta = min(hasta or hoy, hoy)
+    if hasta < desde:
+        hasta = desde
+    return [p for p in _periodos_entre(desde, hasta) if recalcular_trabajador_periodo(db, trabajador_id, p)]

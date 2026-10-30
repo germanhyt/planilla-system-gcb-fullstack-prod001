@@ -18,7 +18,7 @@ from ..audit import audit, to_dict
 from ..cierre import exigir_abierto_trabajador
 from ..db import get_db
 from ..deps import current_user, require
-from ..engine import he_programadas_dia  # noqa: F401 - re-export para consumidores
+from ..engine import he_programadas_dia, recalcular_rango  # noqa: F401 - re-export para consumidores
 from ..models import HEProgramada, Trabajador, Usuario
 
 r = APIRouter(prefix="/he-programadas", tags=["he_programadas"])
@@ -84,6 +84,7 @@ def programar(data: HEProgramadaIn, db: Session = Depends(get_db), u: Usuario = 
     audit(db, u.id, "actualizar" if antes else "crear", "he_programada", h.id, antes, to_dict(h))
     db.commit()
     db.refresh(h)
+    recalcular_rango(db, t.id, h.dia, h.dia)
     return _out(h, t)
 
 
@@ -99,4 +100,5 @@ def anular(he_id: int, db: Session = Depends(get_db), u: Usuario = Depends(requi
     h.estado, h.actualizado_en = "anulada", datetime.now(timezone.utc)
     audit(db, u.id, "anular", "he_programada", h.id, antes, to_dict(h))
     db.commit()
+    recalcular_rango(db, t.id, h.dia, h.dia)
     return _out(h, t)

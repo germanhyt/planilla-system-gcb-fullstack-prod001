@@ -16,7 +16,7 @@ from ..audit import audit
 from ..cierre import exigir_abierto_trabajador
 from ..db import get_db
 from ..deps import current_user, require
-from ..engine import refrigerio_efectivo, resolver_turno_dia
+from ..engine import recalcular_rango, refrigerio_efectivo, resolver_turno_dia
 from ..models import HorarioAsignacion, TipoContrato, Trabajador, TurnoPlantilla, Usuario
 
 r = APIRouter(prefix="/asignaciones-horario", tags=["asignaciones_horario"])
@@ -83,6 +83,7 @@ def crear(body: AsignacionIn, db: Session = Depends(get_db), u: Usuario = Depend
     db.flush()
     audit(db, u.id, "crear", "horario_asignacion", a.id, None, _out(a))
     db.commit()
+    recalcular_rango(db, t.id, body.vigente_desde, body.vigente_hasta)
     return _out(a)
 
 
@@ -94,9 +95,11 @@ def eliminar(asig_id: int, db: Session = Depends(get_db), u: Usuario = Depends(r
     _trab(db, u, a.trabajador_id, escritura=True)
     exigir_abierto_trabajador(db, a.trabajador_id, a.vigente_desde.strftime("%Y-%m"))
     antes = _out(a)
+    tid, d0, d1 = a.trabajador_id, a.vigente_desde, a.vigente_hasta
     db.delete(a)
     audit(db, u.id, "eliminar", "horario_asignacion", asig_id, antes, None)
     db.commit()
+    recalcular_rango(db, tid, d0, d1)
     return {"ok": True}
 
 
