@@ -5,6 +5,7 @@ import { Crud, Campo } from './Crud'
 import { Marcador } from './Marcador'
 import { MarcasEquipo, MisMarcas } from './Marcas'
 import { BolsaHoras, Excepciones } from './Excepciones'
+import { Reportes } from './Reportes'
 
 const EMPRESA: Campo[] = [{ k: 'codigo', label: 'Código', req: true }, { k: 'razon_social', label: 'Razón social', req: true }, { k: 'ruc', label: 'RUC', req: true }]
 const UNIDAD: Campo[] = [{ k: 'empresa_id', label: 'Empresa', tipo: 'select', opciones: '/empresas', req: true }, { k: 'codigo', label: 'Código', req: true }, { k: 'nombre', label: 'Nombre', req: true }]
@@ -60,7 +61,7 @@ function App() {
   if (!getToken() || !me) return <Login onOk={cargar} />
   const r = me.rol; const admin = r === 'admin'; const rrhh = r === 'rrhh' || admin; const jefe = r === 'jefe' || rrhh
   const trabajador = r === 'trabajador' || jefe
-  const menu: [string, string, boolean][] = [['perfil', 'Mi perfil', true], ['marcar', 'Marcar asistencia', trabajador], ['mis-marcas', 'Mis marcas', r === 'trabajador'], ['marcas', 'Marcas', jefe], ['excepciones', 'Excepciones', jefe], ['bolsa', r === 'trabajador' ? 'Mi bolsa de horas' : 'Bolsa de horas', true], ['empresas', 'Empresas', jefe], ['unidades', 'Unidades', jefe], ['sedes', 'Sedes', jefe],
+  const menu: [string, string, boolean][] = [['perfil', 'Mi perfil', true], ['marcar', 'Marcar asistencia', trabajador], ['mis-marcas', 'Mis marcas', r === 'trabajador'], ['marcas', 'Marcas', jefe], ['excepciones', 'Excepciones', jefe], ['reportes', 'Reportes', jefe], ['bolsa', r === 'trabajador' ? 'Mi bolsa de horas' : 'Bolsa de horas', true], ['empresas', 'Empresas', jefe], ['unidades', 'Unidades', jefe], ['sedes', 'Sedes', jefe],
     ['contratos', 'Tipos de contrato', jefe], ['trabajadores', 'Trabajadores', jefe], ['reglas', 'Reglas', jefe]]
   return <div><nav>{menu.filter(m => m[2]).map(([k, l]) => <button key={k} className={vista === k ? 'act' : ''} onClick={() => setVista(k)}>{l}</button>)}
     <span>{me.nombre} ({r})</span><button onClick={() => { localStorage.removeItem('token'); location.reload() }}>Salir</button></nav>
@@ -71,6 +72,7 @@ function App() {
       {vista === 'marcas' && <MarcasEquipo rol={r} />}
       {vista === 'excepciones' && <Excepciones rol={r} />}
       {vista === 'bolsa' && <BolsaHoras rol={r} />}
+      {vista === 'reportes' && <Reportes rol={r} />}
       {vista === 'empresas' && <Crud titulo="Empresas" ruta="/empresas" campos={EMPRESA} puedeEscribir={admin} />}
       {vista === 'unidades' && <Crud titulo="Unidades" ruta="/unidades" campos={UNIDAD} puedeEscribir={admin} />}
       {vista === 'sedes' && <Crud titulo="Sedes" ruta="/sedes" campos={SEDE} puedeEscribir={admin} />}
