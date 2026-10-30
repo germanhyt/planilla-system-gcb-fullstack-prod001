@@ -49,8 +49,14 @@ curl -fsS https://planilla.gcb.pe/api/health    # {"ok":true}
 ## 5. Backups
 - `sh scripts/backup-db.sh` (Linux/prod; cron sugerido 02:30) o `powershell -File scripts/backup-db.ps1 [-Prod]`.
 - Formato `pg_dump -Fc`, verificado con `pg_restore -l`, rotación `BACKUP_KEEP_DAYS` (14).
-- **PENDIENTE (decisión abierta)**: destino de copia fuera del servidor (`BACKUP_OFFSITE_DEST` en `.env.example`).
-  Hasta definirlo, copiar `backups/` manualmente fuera del servidor.
+- **Decisión PO (sprint 5)**: los backups se guardan **en el propio VPS de producción**, en `/var/backups/planilla`
+  (fuera del repo, permisos 700), con retención de 14 días:
+  ```
+  sudo install -d -m 700 /var/backups/planilla
+  # crontab de root (02:30 Lima):
+  30 2 * * * cd /opt/planilla && BACKUP_DIR=/var/backups/planilla BACKUP_KEEP_DAYS=14 sh scripts/backup-db.sh >> /var/backups/planilla/backup.log 2>&1
+  ```
+- Riesgo aceptado: si se pierde el VPS se pierden los backups. Recomendado activar snapshots del proveedor del VPS.
 - Restaurar: `docker compose ... exec -T db pg_restore -U planilla -d planilla --clean --if-exists < backups/planilla_X.dump`.
 - **Nunca** `docker compose down -v` (borra el volumen `pgdata`).
 
@@ -63,6 +69,7 @@ curl -fsS https://planilla.gcb.pe/api/health    # {"ok":true}
 - [ ] DNS + certificado emitido; `/api/health` OK por HTTPS.
 - [ ] Maestros y rule_set cargados; plantillas y asignaciones de horario de Cavas.
 - [ ] Usuarios creados y contraseñas entregadas; prueba de marca GPS en cada sede (geocerca).
-- [ ] Backup diario programado y una restauración de prueba realizada.
-- [ ] Decisiones abiertas resueltas (ver informe de sprint 4): destino de backup fuera del servidor, política de recálculo masivo, jornada de capacitación.
+- [ ] `/var/backups/planilla` creado (700), cron 02:30 instalado, primer dump verificado (`pg_restore -l`) y una restauración de prueba realizada.
+- [ ] Primer arranque prod: semilla de configuración aplicada (logs de `api`), sin trabajadores/marcas demo; reglas revisadas en **Configuración**.
+- [ ] Decisiones abiertas resueltas (ver informe de sprint 4): política de recálculo masivo, jornada de capacitación.
 - [x] Refrigerio PT = 45 min; reglas CAVAS reales desde 2026-11-01; dominio `planilla.gcb.pe`; correo LE `sistemas@gcb.pe`.
