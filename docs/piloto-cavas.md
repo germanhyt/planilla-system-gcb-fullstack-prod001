@@ -46,6 +46,17 @@ curl -fsS https://planilla.gcb.pe/api/health    # {"ok":true}
 - El recálculo **conserva** las regularizaciones de HE ya aprobadas/rechazadas; solo regenera las pendientes.
 - Periodo cerrado: todo cambio responde 409; reabrir solo admin.
 
+## 4b. Primer administrador (arranque de producción)
+La semilla de prod no crea usuarios. Una sola vez, tras el primer `up`:
+```
+docker compose -f docker-compose.yml -f docker-compose.prod.yml exec api \
+  python -m app.scripts.crear_admin --email sistemas@gcb.pe --nombre "Nombre Apellido"
+```
+- Pide la contraseña sin eco (mín. 10 caracteres) y la confirma; nunca se imprime ni se guarda en logs.
+  Sin TTY la lee de la 1.ª línea de stdin (no pasarla como argumento ni variable de entorno).
+- Si ya existe un administrador no hace nada. El alta queda en auditoría (`usuario`/`crear`, origen `cli:crear_admin`).
+- El resto de usuarios se crean desde la app.
+
 ## 5. Backups
 - `sh scripts/backup-db.sh` (Linux/prod; cron sugerido 02:30) o `powershell -File scripts/backup-db.ps1 [-Prod]`.
 - Formato `pg_dump -Fc`, verificado con `pg_restore -l`, rotación `BACKUP_KEEP_DAYS` (14).
