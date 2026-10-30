@@ -206,6 +206,10 @@ class Marca(Base):
     registrado_por: Mapped[Optional[int]] = mapped_column(ForeignKey("usuario.id"))
     validacion_estado: Mapped[str] = mapped_column(String(20), default="ok")  # ok|fuera_geocerca|duplicado
     sincronizado_offline: Mapped[bool] = mapped_column(Boolean, default=False)  # Sprint 3: marca enviada desde cola offline
+    # Sprint 3 / Inc 5: marcas diferidas (PWA offline). id_idempotente = UUID generado en el dispositivo.
+    id_idempotente: Mapped[Optional[str]] = mapped_column(String(36), unique=True)
+    diferida: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    diferencia_min: Mapped[Optional[int]] = mapped_column(Integer)  # |ts_servidor - ts_cliente| en minutos
 
 
 class Asistencia(Base):

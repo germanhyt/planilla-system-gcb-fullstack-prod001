@@ -1,6 +1,7 @@
 from datetime import date, datetime, time
 from decimal import Decimal
 from typing import Literal, Optional
+from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field
 
@@ -141,6 +142,8 @@ class MarcaIn(BaseModel):
     lng: Optional[float] = Field(None, ge=-180, le=180)
     ts_cliente: Optional[datetime] = None
     qr_code: Optional[str] = None
+    id_idempotente: Optional[UUID] = None  # UUID del dispositivo: reintentos no duplican
+    offline: bool = False  # True si la marca se encolo sin red y se envia diferida
 
 
 class MarcaManualIn(BaseModel):

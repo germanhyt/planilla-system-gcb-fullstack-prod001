@@ -12,6 +12,7 @@ from typing import Literal, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import false, func, select, true
 from sqlalchemy.orm import Session
+from zoneinfo import ZoneInfo
 
 from ..db import get_db
 from ..deps import current_user
@@ -29,10 +30,11 @@ from ..models import (
 from ..rules import efectivas
 from .reglas import vigente
 
+LIMA = ZoneInfo("America/Lima")
 router = APIRouter(prefix="/excepciones", tags=["excepciones"])
 banco = APIRouter(prefix="/banco-horas", tags=["banco_horas"])
 
-TIPOS = ("he_no_programada", "tardanza", "fuera_geocerca", "pt_alerta")
+TIPOS = ("he_no_programada", "tardanza", "fuera_geocerca", "marca_diferida", "pt_alerta")
 GESTORES = ("jefe", "rrhh", "admin")
 
 
@@ -94,7 +96,7 @@ def alertas_pt(db: Session, filtro, desde: date, hasta: date) -> list[dict]:
 def bandeja(
     desde: date = Query(...),
     hasta: date = Query(...),
-    tipo: Optional[Literal["he_no_programada", "tardanza", "fuera_geocerca", "pt_alerta"]] = None,
+    tipo: Optional[Literal["he_no_programada", "tardanza", "fuera_geocerca", "marca_diferida", "pt_alerta"]] = None,
     estado: Optional[Literal["pendiente", "aprobado", "rechazado", "informativo"]] = None,
     unidad_id: Optional[int] = None,
     db: Session = Depends(get_db),
@@ -151,6 +153,24 @@ def bandeja(
             dist = f" a {round(float(m.distancia_m))} m" if m.distancia_m is not None else ""
             items.append({"clave": f"geo-{m.id}", "tipo": "fuera_geocerca", "ref_id": m.id, "trabajador": _trab(t),
                           "dia": m.ts_servidor.date().isoformat(), "detalle": f"Marca de {m.tipo} fuera de geocerca{dist}",
+                          "estado": "informativo", "accionable": False})
+
+    if tipo in (None, "marca_diferida") and estado in (None, "informativo"):
+        from .marcas import umbral_diferida
+        q = (select(Marca, Trabajador).join(Trabajador, Trabajador.id == Marca.trabajador_id)
+             .where(filtro, Marca.diferida.is_(True), Marca.diferencia_min.isnot(None),
+                    func.date(func.timezone("America/Lima", Marca.ts_servidor)) >= desde,
+                    func.date(func.timezone("America/Lima", Marca.ts_servidor)) <= hasta)
+             .order_by(Marca.ts_servidor.desc()).limit(300))
+        for m, t in db.execute(q):
+            umbral = umbral_diferida(db, t.empresa_id, m.ts_servidor.date())
+            if m.diferencia_min <= umbral:
+                continue
+            disp = m.ts_cliente.astimezone(LIMA).strftime("%d/%m %H:%M") if m.ts_cliente else "?"
+            items.append({"clave": f"dif-{m.id}", "tipo": "marca_diferida", "ref_id": m.id, "trabajador": _trab(t),
+                          "dia": m.ts_servidor.astimezone(LIMA).date().isoformat(),
+                          "detalle": (f"Marca de {m.tipo} sincronizada offline {m.diferencia_min} min despues"
+                                      f" (dispositivo {disp}; umbral {umbral} min). Revisar"),
                           "estado": "informativo", "accionable": False})
 
     if tipo in (None, "pt_alerta") and estado in (None, "informativo"):

@@ -4,6 +4,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import and_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from zoneinfo import ZoneInfo
 
@@ -13,7 +14,7 @@ from ..db import get_db
 from ..deps import require
 from ..engine import calcular_distancia, get_dia_operativo
 from ..models import Marca, RuleSet, Sede, Trabajador, Usuario
-from ..rules import efectivas
+from ..rules import BASE, efectivas
 from ..schemas import MarcaIn, MarcaManualIn
 
 r = APIRouter(prefix="/marcas", tags=["marcas"])
@@ -53,13 +54,46 @@ def verificar_duplicado(db: Session, trabajador_id: int, tipo: str, ventana_min:
     return existe is not None
 
 
+def _respuesta(m: Marca, repetida: bool = False) -> dict:
+    return {"id": m.id, "ts_servidor": m.ts_servidor.isoformat(), "validacion_estado": m.validacion_estado,
+            "distancia_m": float(m.distancia_m) if m.distancia_m is not None else None,
+            "id_idempotente": m.id_idempotente, "diferida": bool(m.diferida), "diferencia_min": m.diferencia_min,
+            "repetida": repetida}
+
+
+def umbral_diferida(db: Session, empresa_id: int, dia: date) -> int:
+    """Umbral (min) de diferencia ts_servidor - ts_dispositivo para que una marca diferida vaya a revision."""
+    rs = db.query(RuleSet).filter(RuleSet.empresa_id == empresa_id, RuleSet.valid_from <= dia) \
+        .order_by(RuleSet.valid_from.desc()).first()
+    try:
+        return int(efectivas(rs.config or {} if rs else {})["marcacion_offline"]["umbral_diferida_min"])
+    except Exception:  # noqa: BLE001 - config invalida: umbral base
+        return int(BASE["marcacion_offline"]["umbral_diferida_min"])
+
+
 @r.post("/")
 def registrar_marca(marca_in: MarcaIn, request: Request, db: Session = Depends(get_db), u: Usuario = Depends(require("trabajador", "jefe", "rrhh", "admin"))):
+    """Marca GPS/QR. Con id_idempotente los reintentos devuelven la misma marca (sin duplicar).
+
+    offline=True (cola de la PWA): ts_servidor = recepcion, ts_cliente = hora del dispositivo; la marca queda
+    'diferida' y el bloqueo de periodo cerrado se evalua sobre la hora del dispositivo (409 si esta cerrado).
+    """
     trabajador = db.query(Trabajador).filter(Trabajador.usuario_id == u.id).first()
     if not trabajador:
         raise HTTPException(403, "Usuario no vinculado a trabajador")
-    
-    if verificar_duplicado(db, trabajador.id, marca_in.tipo):
+
+    idem = str(marca_in.id_idempotente) if marca_in.id_idempotente else None
+    if idem:
+        previa = db.query(Marca).filter(Marca.id_idempotente == idem).first()
+        if previa:
+            if previa.trabajador_id != trabajador.id:
+                raise HTTPException(409, "id_idempotente ya usado por otra marca")
+            return _respuesta(previa, repetida=True)
+
+    if marca_in.offline and not marca_in.ts_cliente:
+        raise HTTPException(422, "Una marca offline requiere ts_cliente (hora del dispositivo)")
+
+    if not marca_in.offline and verificar_duplicado(db, trabajador.id, marca_in.tipo):
         raise HTTPException(400, "Ya existe una marca del mismo tipo en los últimos 5 minutos")
     
     validacion_estado = "ok"
@@ -70,6 +104,12 @@ def registrar_marca(marca_in: MarcaIn, request: Request, db: Session = Depends(g
         validacion_estado, distancia_m, sede_id = validar_geocerca(db, trabajador.id, marca_in.lat, marca_in.lng)
     
     ts_servidor = datetime.now(timezone.utc)
+    diferida, diferencia_min = False, None
+    if marca_in.offline:
+        ts_disp = marca_in.ts_cliente if marca_in.ts_cliente.tzinfo else marca_in.ts_cliente.replace(tzinfo=LIMA)
+        diferida = True
+        diferencia_min = int(abs((ts_servidor - ts_disp).total_seconds()) // 60)
+        exigir_abierto_ts(db, trabajador, ts_disp)
     exigir_abierto_ts(db, trabajador, ts_servidor)
 
     marca = Marca(
@@ -83,26 +123,33 @@ def registrar_marca(marca_in: MarcaIn, request: Request, db: Session = Depends(g
         sede_id=sede_id,
         metodo="qr" if marca_in.qr_code else "gps",
         qr_code=marca_in.qr_code,
-        validacion_estado=validacion_estado
+        validacion_estado=validacion_estado,
+        id_idempotente=idem,
+        sincronizado_offline=marca_in.offline,
+        diferida=diferida,
+        diferencia_min=diferencia_min,
     )
-    
+
     db.add(marca)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:  # carrera: el mismo id_idempotente llego dos veces a la vez
+        db.rollback()
+        previa = db.query(Marca).filter(Marca.id_idempotente == idem).first() if idem else None
+        if previa and previa.trabajador_id == trabajador.id:
+            return _respuesta(previa, repetida=True)
+        raise
     db.refresh(marca)
     
     ip = request.client.host if request.client else None
     audit(db, u.id, "crear", "marca", str(marca.id), None, {
         "trabajador_id": trabajador.id,
         "tipo": marca_in.tipo,
-        "validacion": validacion_estado
+        "validacion": validacion_estado,
+        "diferida": diferida,
     }, ip)
-    
-    return {
-        "id": marca.id,
-        "ts_servidor": ts_servidor.isoformat(),
-        "validacion_estado": validacion_estado,
-        "distancia_m": distancia_m
-    }
+
+    return _respuesta(marca)
 
 
 @r.post("/manual")
@@ -274,6 +321,9 @@ def _consultar(db: Session, trabajadores: dict[int, Trabajador], desde: Optional
             "dia_operativo": dia_op.isoformat(),
             "corte": corte,
             "razon_manual": m.razon_manual,
+            "diferida": bool(m.diferida),
+            "ts_cliente": m.ts_cliente.isoformat() if m.ts_cliente else None,
+            "diferencia_min": m.diferencia_min,
         })
     return out
 

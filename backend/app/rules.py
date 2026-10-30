@@ -15,6 +15,7 @@ BASE: dict = {
     "part_time": {"alerta_promedio_diario_horas": 4, "ventana": "semanal", "bloqueante": False},
     "nocturno": {"inicio": "22:00", "fin": "06:00", "siempre_calcular": True, "mostrar_sobretasa_separada": False},
     "bono_nocturno_3am": {"habilitado": True, "registra_rol": "admin", "requiere_aprobacion": True},
+    "marcacion_offline": {"umbral_diferida_min": 15},
 }
 
 
@@ -71,6 +72,11 @@ class Bono3AM(BaseModel):
     requiere_aprobacion: bool
 
 
+class MarcacionOffline(BaseModel):
+    # marcas diferidas cuya diferencia ts_servidor - ts_dispositivo supera el umbral van a la bandeja
+    umbral_diferida_min: int = Field(15, ge=0, le=1440)
+
+
 class ReglasEfectivas(BaseModel):
     tolerancia: Tolerancia
     dia_operativo: DiaOperativo
@@ -79,6 +85,7 @@ class ReglasEfectivas(BaseModel):
     part_time: PartTime
     nocturno: Nocturno
     bono_nocturno_3am: Bono3AM
+    marcacion_offline: MarcacionOffline
 
 
 def deep_merge(base: dict, over: dict) -> dict:
