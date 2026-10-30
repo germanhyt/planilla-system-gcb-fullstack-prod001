@@ -11,7 +11,7 @@ interface Item {
   empresa?: string; dia: string; detalle: string; horas?: number; estado: string; destino?: Destino | null
   destino_default?: Destino; observacion?: string | null; accionable: boolean; alerta_pt?: string | null
 }
-const TIPOS: Record<string, string> = { he_no_programada: 'HE no programada (no autorizada)', tardanza: 'Tardanza', fuera_geocerca: 'Marca fuera de geocerca', pt_alerta: 'Alerta part-time (PT85/PT102)' }
+const TIPOS: Record<string, string> = { he_no_programada: 'HE no programada (no autorizada)', tardanza: 'Tardanza', fuera_geocerca: 'Marca fuera de geocerca', marca_diferida: 'Marca diferida (offline)', pt_alerta: 'Alerta part-time (PT85/PT102)' }
 const DESTINOS: Record<Destino, string> = { pago: 'Pago (25% / 35%)', compensacion: 'Compensación (bolsa de horas)', mixto: 'Mixto' }
 const ESTADO_COLOR: Record<string, string> = { pendiente: '#b26a00', aprobado: '#1b7f3b', rechazado: '#b00', informativo: '#555' }
 
