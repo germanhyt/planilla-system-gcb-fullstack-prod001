@@ -1,4 +1,4 @@
-﻿"""Sprint 5: mÃ³dulo ConfiguraciÃ³n (rule_set versionado + tipos de contrato) y semilla de configuraciÃ³n para prod."""
+"""Sprint 5: módulo Configuración (rule_set versionado + tipos de contrato) y semilla de configuración para prod."""
 import pytest
 from sqlalchemy import create_engine, func, select, text
 from sqlalchemy.engine import make_url
@@ -24,7 +24,7 @@ def test_preview_no_guarda_y_muestra_diff(client, H, ids):
     rutas = {d["ruta"]: d for d in j["diff"]}
     assert rutas["tolerancia.modo"] == {"ruta": "tolerancia.modo", "antes": "umbral_perdona", "despues": "umbral_descuenta_exceso"}
     assert rutas["horas_extra.pct_pago_mixto"]["despues"] == 70
-    # la versiÃ³n vigente CAVAS separa nocturno; la nueva config no lo define -> vuelve a BASE (aparece en el diff)
+    # la versión vigente CAVAS separa nocturno; la nueva config no lo define -> vuelve a BASE (aparece en el diff)
     assert "nocturno.mostrar_sobretasa_separada" in rutas
     assert len(client.get("/rule-sets", headers=H["admin"], params={"empresa_id": cav}).json()) == n
 
@@ -96,7 +96,7 @@ def test_tipo_contrato_incoherente_422(client, H, ids, cambio):
     assert client.put(f"/tipos-contrato/{tc['id']}", headers=H["admin"], json=body).status_code == 422
 
 
-# --- Semilla de configuraciÃ³n (prod) ------------------------------------------------------------
+# --- Semilla de configuración (prod) ------------------------------------------------------------
 def test_semilla_demo_bloqueada_en_produccion(monkeypatch):
     monkeypatch.setenv("APP_ENV", "production")
     with pytest.raises(SystemExit):
@@ -114,7 +114,7 @@ def test_semilla_config_idempotente_sin_tocar_lo_editado(db):
 
 @pytest.fixture
 def bd_vacia():
-    """BD temporal vacÃ­a (create_all) para probar la semilla de prod desde cero."""
+    """BD temporal vacía (create_all) para probar la semilla de prod desde cero."""
     import os
     url = make_url(os.environ["DATABASE_URL"])
     nombre = f"{url.database}_prodseed"

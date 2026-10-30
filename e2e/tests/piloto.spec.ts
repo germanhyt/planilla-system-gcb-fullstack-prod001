@@ -1,4 +1,4 @@
-﻿/**
+/**
  * E2E de humo del piloto (solo lectura: no crea marcas, no cierra periodos -> seguro contra dev).
  * Usuarios de la semilla demo: {trabajador,jefe,rrhh,admin}@demo.gcb.pe
  */
@@ -13,7 +13,7 @@ test('api /health responde ok a traves del proxy web', async ({ request }) => {
 test('login invalido muestra error', async ({ page }) => {
   await page.goto('/')
   await page.getByPlaceholder('Correo').fill('nadie@demo.gcb.pe')
-  await page.getByPlaceholder('ContraseÃ±a').fill('mala')
+  await page.getByPlaceholder('Contraseña').fill('mala')
   await page.getByRole('button', { name: 'Ingresar' }).click()
   await expect(page.locator('.err')).toBeVisible()
 })
@@ -32,9 +32,9 @@ test('trabajador: marcar, mis marcas, justificar falta, bolsa; sin menus de gest
 
 test('jefe: horarios, HE programadas, justificaciones, excepciones y reportes de su unidad', async ({ page }) => {
   await login(page, 'jefe@demo.gcb.pe')
-  await abrir(page, 'Horarios', 'AsignaciÃ³n de horarios')
+  await abrir(page, 'Horarios', 'Asignación de horarios')
   await abrir(page, 'Horas extra programadas', 'Horas extra programadas')
-  await abrir(page, 'Justificaciones', 'JustificaciÃ³n de faltas')
+  await abrir(page, 'Justificaciones', 'Justificación de faltas')
   await abrir(page, 'Excepciones', /Excepciones/)
   await abrir(page, 'Reportes', /Reportes/)
   await expect(page.locator('nav').getByRole('button', { name: 'Cierre de periodo', exact: true })).toHaveCount(0)
@@ -49,7 +49,7 @@ test('rrhh: cierre de periodo (solo ver checklist), bono 3 AM, trabajadores', as
 
 test('rrhh: configuracion en solo lectura', async ({ page }) => {
   await login(page, 'rrhh@demo.gcb.pe')
-  await abrir(page, 'ConfiguraciÃ³n', 'ConfiguraciÃ³n')
+  await abrir(page, 'Configuración', 'Configuración')
   await expect(page.getByText('Solo lectura')).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Valores vigentes' })).toBeVisible()
   await expect(page.getByLabel('Tolerancia (min)')).toBeDisabled()
@@ -59,18 +59,18 @@ test('rrhh: configuracion en solo lectura', async ({ page }) => {
 test('jefe: reglas vigentes (solo consulta)', async ({ page }) => {
   await login(page, 'jefe@demo.gcb.pe')
   await abrir(page, 'Reglas', 'Reglas vigentes (rule_set)')
-  await expect(page.locator('nav').getByRole('button', { name: 'ConfiguraciÃ³n' })).toHaveCount(0)
+  await expect(page.locator('nav').getByRole('button', { name: 'Configuración' })).toHaveCount(0)
 })
 
-// ConfiguraciÃ³n: SOLO previsualiza y valida; nunca publica versiones (seguro contra dev).
+// Configuración: SOLO previsualiza y valida; nunca publica versiones (seguro contra dev).
 test('admin: configuracion - historial, validaciones y preview del diff, y salir', async ({ page }) => {
   await login(page, 'admin@demo.gcb.pe')
-  await abrir(page, 'ConfiguraciÃ³n', 'ConfiguraciÃ³n')
+  await abrir(page, 'Configuración', 'Configuración')
   await expect(page.getByRole('heading', { name: 'Historial de versiones' })).toBeVisible()
   await expect(page.getByText('(vigente)')).toBeVisible()
   await page.getByRole('button', { name: 'Previsualizar cambios' }).click()
   await expect(page.locator('[data-campo="motivo"]')).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Publicar versiÃ³n' })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Publicar versión' })).toBeDisabled()
   await page.getByLabel('Vigente desde').fill('2099-01-01')
   await page.getByLabel('Motivo').fill('prueba e2e (no se publica)')
   const tol = page.getByLabel('Tolerancia (min)')
@@ -80,7 +80,7 @@ test('admin: configuracion - historial, validaciones y preview del diff, y salir
   await tol.fill('3')
   await page.getByRole('button', { name: 'Previsualizar cambios' }).click()
   await expect(page.getByRole('cell', { name: 'tolerancia.minutos' })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Publicar versiÃ³n' })).toBeEnabled()
+  await expect(page.getByRole('button', { name: 'Publicar versión' })).toBeEnabled()
   await page.locator('section nav').getByRole('button', { name: 'Tipos de contrato' }).click()
   await expect(page.getByRole('heading', { name: 'Tipos de contrato' })).toBeVisible()
   await page.getByRole('button', { name: 'Salir' }).click()
