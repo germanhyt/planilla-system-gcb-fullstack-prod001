@@ -1,4 +1,5 @@
 from datetime import date, datetime, time
+from decimal import Decimal
 from typing import Literal, Optional
 
 from pydantic import BaseModel, EmailStr, Field
@@ -113,6 +114,7 @@ class BonoIn(BaseModel):
     trabajador_id: int
     periodo: str = Field(pattern=r"^\d{4}-(0[1-9]|1[0-2])$")
     cantidad: int = Field(ge=0, le=31)
+    monto: Optional[Decimal] = Field(None, ge=0, le=100000, decimal_places=2)  # S/; obligatorio para aprobar
     observacion: Optional[str] = None
 
 
@@ -160,6 +162,7 @@ class CierrePeriodoIn(BaseModel):
     """Sprint 3: Cerrar periodo mensual."""
     empresa_id: int
     periodo: str = Field(pattern=r"^\d{4}-(0[1-9]|1[0-2])$")
+    confirmar: bool = False  # obligatorio si el checklist tiene pendientes
 
 
 class ReaperturaPeriodoIn(BaseModel):

@@ -4,6 +4,7 @@ NO contiene nombres, DNI ni sueldos reales. Uso: python seed.py [--if-empty]
 import random
 import sys
 from datetime import date, datetime, time, timedelta
+from decimal import Decimal
 
 from sqlalchemy import select
 from zoneinfo import ZoneInfo
@@ -14,6 +15,7 @@ from app.models import (
     Asistencia,
     BancoHorasCompensatorias,
     BonoNocturno,
+    BonoNocturnoHistorial,
     Empresa,
     HorarioPlan,
     Marca,
@@ -219,6 +221,11 @@ def main():
     # Sprint 3 / Incremento 3: turnos nocturnos con HE y bono 3 AM para la pantalla Reportes (idempotente).
     if not db.scalar(select(BonoNocturno.id).where(BonoNocturno.observacion.like("Seed:%")).limit(1)):
         seed_reportes(db, hoy, users)
+    # Incremento 4: monto de ejemplo del bono 3 AM (idempotente: sólo si el bono seed aún no tiene monto).
+    for b in db.scalars(select(BonoNocturno).where(BonoNocturno.observacion.like("Seed:%"), BonoNocturno.monto.is_(None))):
+        b.monto, b.aprobado_por = Decimal("60.00"), users["rrhh"].id
+        db.add(BonoNocturnoHistorial(bono_id=b.id, usuario_id=users["admin"].id, accion="corregir", cantidad=b.cantidad,
+                                     monto=b.monto, estado=b.estado, comentario="Seed: monto de ejemplo S/ 60.00"))
 
     db.commit()
     print(f"Semilla OK: {n} trabajadores ficticios, {marcas_creadas} marcas de muestra, usuarios demo: {', '.join(u.email for u in users.values())}")
@@ -285,8 +292,8 @@ def seed_reportes(db, hoy: date, users: dict):
                       horas_extra_25=1, horas_extra_35=0, horas_nocturnas=8, exceso_no_programado=0, rule_set_id=rs)
         if cod == "CAV-003":
             get_or_create(db, BonoNocturno, {"trabajador_id": t.id, "periodo": d.strftime("%Y-%m")}, cantidad=2,
-                          estado="aprobado", observacion="Seed: cierres 3 AM (ejemplo)", registrado_por=users["admin"].id,
-                          aprobado_por=users["admin"].id)
+                          monto=Decimal("60.00"), estado="aprobado", observacion="Seed: cierres 3 AM (ejemplo)",
+                          registrado_por=users["admin"].id, aprobado_por=users["rrhh"].id)
     db.flush()
 
 

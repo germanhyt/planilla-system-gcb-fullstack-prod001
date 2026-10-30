@@ -1,5 +1,6 @@
 """Modelo de datos Sprint 1. El esquema lo gestiona Alembic (nunca create_all)."""
 from datetime import date, datetime, time
+from decimal import Decimal
 from typing import Optional
 
 from sqlalchemy import JSON, Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, Time, UniqueConstraint, func
@@ -130,6 +131,9 @@ class BonoNocturno(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     trabajador_id: Mapped[int] = mapped_column(ForeignKey("trabajador.id"))
     periodo: Mapped[str] = mapped_column(String(7))  # YYYY-MM
+    monto: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2))  # S/ definido por administración
+    moneda: Mapped[str] = mapped_column(String(3), default="PEN", server_default="PEN")
+    aprobado_en: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     cantidad: Mapped[int] = mapped_column(Integer)  # número de cierres 3 AM
     observacion: Mapped[Optional[str]] = mapped_column(Text)
     estado: Mapped[str] = mapped_column(String(20), default="registrado")  # registrado|aprobado|rechazado
@@ -146,6 +150,7 @@ class BonoNocturnoHistorial(Base):
     usuario_id: Mapped[int] = mapped_column(ForeignKey("usuario.id"))
     accion: Mapped[str] = mapped_column(String(20))
     cantidad: Mapped[int] = mapped_column(Integer)
+    monto: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2))
     estado: Mapped[str] = mapped_column(String(20))
     comentario: Mapped[Optional[str]] = mapped_column(Text)
 
