@@ -489,11 +489,10 @@ def test_marca_16h40_lima_operational_day(client: TestClient, db, unique_id):
     marca = db.query(Marca).get(marca_id)
     assert marca is not None
     
-    ts_utc = marca.ts_servidor.astimezone(timezone.utc)
-    hour_utc = ts_utc.hour
-    
-    assert 20 <= hour_utc <= 23, (
-        f"Mark at ~16:40 Lima (21:40 UTC) stored as {marca.ts_servidor}. "
-        f"Expected hour 21-23 UTC but got {hour_utc} UTC. "
+    # ts_servidor es la hora del servidor (no ts_cliente): debe coincidir con "ahora" en UTC, no estar corrida 5h
+    # (antes el test asumía que se ejecutaba a las ~16:40 Lima y fallaba según la hora del reloj).
+    delta = abs((marca.ts_servidor.astimezone(timezone.utc) - datetime.now(timezone.utc)).total_seconds())
+    assert delta < 120, (
+        f"ts_servidor {marca.ts_servidor} difiere {delta:.0f}s de ahora (UTC). "
         f"This indicates naive datetime.utcnow() was written into timestamptz column."
     )
