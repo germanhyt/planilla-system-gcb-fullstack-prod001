@@ -1,5 +1,6 @@
 """Reglas confirmadas como configuración. BASE = lógica base; cada rule_set guarda solo overrides por empresa."""
 import copy
+from datetime import date
 from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
@@ -101,7 +102,14 @@ def efectivas(overrides: dict) -> dict:
 
 
 # Overrides confirmados por empresa (usados por la semilla)
-CAVAS = {"dia_operativo": {"tipo": "operativo", "inicio": "08:00", "fin": "03:00", "corte": "06:00"},
+# CAVAS_DEMO: versión demo/legado (valid_from 2026-01-01) para que los datos de prueba previos al piloto sigan calculando.
+CAVAS_DEMO = {"dia_operativo": {"tipo": "operativo", "inicio": "08:00", "fin": "03:00", "corte": "06:00"},
+         "horas_extra": {"destino_default": "pago"}, "nocturno": {"mostrar_sobretasa_separada": True}}
+# Reglas reales de CAVAS aprobadas por el PO, vigentes desde CAVAS_REAL_DESDE: tolerancia umbral 10 min, corte 06:00,
+# HE destino por defecto pago, sobretasa nocturna en columna aparte. (El refrigerio PT 45 min vive en tipo_contrato.)
+CAVAS_REAL_DESDE = date(2026, 11, 1)
+CAVAS = {"tolerancia": {"modo": "umbral_perdona", "minutos": 10},
+         "dia_operativo": {"tipo": "operativo", "inicio": "08:00", "fin": "03:00", "corte": "06:00"},
          "horas_extra": {"destino_default": "pago"}, "nocturno": {"mostrar_sobretasa_separada": True}}
 GCB_SA = {"dia_operativo": {"tipo": "calendario", "turno_cuenta_dia_inicio": True},
           "horas_extra": {"destino_default": "compensacion"}}

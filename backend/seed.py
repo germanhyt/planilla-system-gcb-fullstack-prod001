@@ -6,7 +6,7 @@ import sys
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from zoneinfo import ZoneInfo
 
 from app.config import settings
@@ -28,7 +28,7 @@ from app.models import (
     Unidad,
     Usuario,
 )
-from app.rules import CAVAS, GCB_SA
+from app.rules import CAVAS, CAVAS_DEMO, CAVAS_REAL_DESDE, GCB_SA
 from app.security import hash_password
 
 rnd = random.Random(2026)
@@ -47,6 +47,13 @@ AREAS_CAVAS = [("Salón", "Mozo/a", 10), ("Bar", "Bartender", 6), ("Cocina", "Co
                ("Caja", "Cajero/a", 2), ("Seguridad", "Anfitrión/Seguridad", 2), ("Administración", "Supervisor/a", 2)]
 
 
+def rs_vigente(db, empresa_id, dia):
+    """rule_set vigente al día (si es anterior a todas las vigencias, la primera)."""
+    q = select(RuleSet.id).where(RuleSet.empresa_id == empresa_id)
+    return (db.scalar(q.where(RuleSet.valid_from <= dia).order_by(RuleSet.valid_from.desc()).limit(1))
+            or db.scalar(q.order_by(RuleSet.valid_from).limit(1)))
+
+
 def get_or_create(db, model, where: dict, **extra):
     obj = db.scalar(select(model).filter_by(**where))
     if not obj:
@@ -59,7 +66,7 @@ def get_or_create(db, model, where: dict, **extra):
 def main():
     db = SessionLocal()
     tc = {c: get_or_create(db, TipoContrato, {"codigo": c}, nombre=n, horas_mes=h, jornada_diaria_min=j, es_part_time=pt,
-                           refrigerio_min=45)
+                           refrigerio_min=45)  # PO: refrigerio 45 min también para PT85/PT102
           for c, n, h, j, pt in [("FT", "Tiempo completo", 208, 480, False), ("PT85", "Part time 85 h/mes", 85, 240, True),
                                  ("PT102", "Part time 102 h/mes", 102, 240, True)]}
     cav = get_or_create(db, Empresa, {"codigo": "CAVAS"}, razon_social="CAVAS SAC", ruc="20000000001")
@@ -74,9 +81,16 @@ def main():
     for u, pats in ((u_cav, TURNOS_CAVAS), (u_par, TURNOS_PARKING)):
         for n, a, b, r in pats:
             get_or_create(db, TurnoPlantilla, {"unidad_id": u.id, "nombre": n}, inicio=a, fin=b, refrigerio_min=r)
-    for e, cfg in ((cav, CAVAS), (gcb, GCB_SA)):
+    for e, cfg in ((cav, CAVAS_DEMO), (gcb, GCB_SA)):
         get_or_create(db, RuleSet, {"empresa_id": e.id, "version": 1}, valid_from=date(2026, 1, 1), config=cfg,
-                      motivo="Reglas confirmadas Sprint 1")
+                      motivo="Demo/legado (Sprint 1)" if e is cav else "Reglas confirmadas Sprint 1")
+    # Reglas reales CAVAS (PO) vigentes desde 2026-11-01. Idempotente por vigencia; no toca periodos cerrados
+    # (la vigencia es futura y crear un rule_set no recalcula nada).
+    if not db.scalar(select(RuleSet).where(RuleSet.empresa_id == cav.id, RuleSet.valid_from == CAVAS_REAL_DESDE)):
+        ver = (db.scalar(select(func.max(RuleSet.version)).where(RuleSet.empresa_id == cav.id)) or 0) + 1
+        db.add(RuleSet(empresa_id=cav.id, version=ver, valid_from=CAVAS_REAL_DESDE, config=CAVAS,
+                       motivo="Reglas reales CAVAS (PO): tolerancia 10, corte 06:00, HE pago, nocturno aparte"))
+        db.flush()
     pw = hash_password(settings.seed_password)
     users = {}
     for rol, unidad in (("admin", None), ("rrhh", None), ("jefe", u_cav.id), ("trabajador", None)):
@@ -235,12 +249,10 @@ def seed_excepciones(db, hoy: date, users: dict):
     """Asistencias calculadas de ejemplo + bandeja HE (pendiente/aprobada/rechazada) + bolsa de horas + alerta PT."""
     trab = {t.codigo: t for t in db.scalars(select(Trabajador).where(
         Trabajador.codigo.in_(["CAV-001", "CAV-002", "CAV-007", "CAV-009", "PAR-001", "PAR-002"])))}
-    rs = {e: db.scalar(select(RuleSet.id).where(RuleSet.empresa_id == e).order_by(RuleSet.version.desc()).limit(1))
-          for e in {t.empresa_id for t in trab.values()}}
-
     def asis(cod, dias_atras, prog, trab_h, exceso=0.0, tardanza=0):
         t = trab[cod]
         d = hoy - timedelta(days=dias_atras)
+        rs = {t.empresa_id: rs_vigente(db, t.empresa_id, d)}
         return get_or_create(db, Asistencia, {"trabajador_id": t.id, "dia_operativo": d}, periodo=d.strftime("%Y-%m"),
                              horas_programadas=prog, horas_trabajadas=trab_h, tardanza_min=tardanza, horas_extra_25=0,
                              horas_extra_35=0, horas_nocturnas=0, exceso_no_programado=exceso, rule_set_id=rs[t.empresa_id])
@@ -285,8 +297,8 @@ def seed_reportes(db, hoy: date, users: dict):
         t = db.scalar(select(Trabajador).where(Trabajador.codigo == cod))
         if not t:
             continue
-        rs = db.scalar(select(RuleSet.id).where(RuleSet.empresa_id == t.empresa_id).order_by(RuleSet.version.desc()).limit(1))
         d = hoy - timedelta(days=2)
+        rs = rs_vigente(db, t.empresa_id, d)
         get_or_create(db, Asistencia, {"trabajador_id": t.id, "dia_operativo": d}, periodo=d.strftime("%Y-%m"),
                       horas_programadas=8, horas_trabajadas=9, tardanza_min=0, horas_extra_programadas=1,
                       horas_extra_25=1, horas_extra_35=0, horas_nocturnas=8, exceso_no_programado=0, rule_set_id=rs)

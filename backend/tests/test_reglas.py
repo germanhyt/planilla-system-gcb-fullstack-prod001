@@ -27,14 +27,14 @@ def test_gcb_sa_hereda_base(client, H, ids):
 def test_versionado_por_vigencia(client, H, ids):
     cav = ids["emp"]["CAVAS"]
     r = client.post("/rule-sets", headers=H["admin"], json={
-        "empresa_id": cav, "valid_from": "2026-11-01", "motivo": "cambio tolerancia",
+        "empresa_id": cav, "valid_from": "2026-12-01", "motivo": "cambio tolerancia",
         "config": {"dia_operativo": {"tipo": "operativo", "inicio": "08:00", "fin": "03:00", "corte": "06:00"},
                    "tolerancia": {"modo": "umbral_descuenta_exceso", "minutos": 5}}})
-    assert r.status_code == 201 and r.json()["version"] == 2
-    antes = _vig(client, H, cav, "2026-10-31").json()
-    despues = _vig(client, H, cav, "2026-11-01").json()
-    assert antes["version"] == 1 and antes["efectivas"]["tolerancia"]["modo"] == "umbral_perdona"
-    assert despues["version"] == 2 and despues["efectivas"]["tolerancia"] == {"modo": "umbral_descuenta_exceso", "minutos": 5}
+    assert r.status_code == 201 and r.json()["version"] == 3
+    antes = _vig(client, H, cav, "2026-11-30").json()
+    despues = _vig(client, H, cav, "2026-12-01").json()
+    assert antes["version"] == 2 and antes["efectivas"]["tolerancia"]["modo"] == "umbral_perdona"
+    assert despues["version"] == 3 and despues["efectivas"]["tolerancia"] == {"modo": "umbral_descuenta_exceso", "minutos": 5}
     assert _vig(client, H, cav, "2025-12-31").status_code == 404
 
 
@@ -54,3 +54,21 @@ def test_rule_set_inmutable(client, H):
     assert client.put(f"/rule-sets/{rs['id']}", headers=H["admin"], json={}).status_code in (404, 405)
     assert client.delete(f"/rule-sets/{rs['id']}", headers=H["admin"]).status_code in (404, 405)
     assert client.get("/auditoria", headers=H["admin"], params={"entidad": "rule_set"}).json()
+
+
+def test_cavas_reales_vigentes_desde_2026_11_01(client, H, ids):
+    """Decisión PO: demo/legado hasta 2026-10-31; reglas reales CAVAS desde 2026-11-01."""
+    cav = ids["emp"]["CAVAS"]
+    oct_ = _vig(client, H, cav, "2026-10-31").json()
+    nov = _vig(client, H, cav, "2026-11-01").json()
+    assert oct_["version"] == 1 and nov["version"] == 2 and nov["valid_from"] == "2026-11-01"
+    e = nov["efectivas"]
+    assert e["tolerancia"] == {"modo": "umbral_perdona", "minutos": 10}
+    assert e["dia_operativo"]["corte"] == "06:00" and e["horas_extra"]["destino_default"] == "pago"
+    assert e["nocturno"]["mostrar_sobretasa_separada"] is True
+    assert oct_["efectivas"]["dia_operativo"]["corte"] == "06:00"  # el legado sigue calculando octubre
+
+
+def test_refrigerio_part_time_45(client, H):
+    tcs = {t["codigo"]: t for t in client.get("/tipos-contrato", headers=H["admin"]).json()}
+    assert tcs["PT85"]["refrigerio_min"] == 45 and tcs["PT102"]["refrigerio_min"] == 45
