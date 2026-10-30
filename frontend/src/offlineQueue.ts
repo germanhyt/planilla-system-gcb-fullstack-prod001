@@ -65,14 +65,17 @@ export async function descartar(id: string): Promise<void> {
   avisar()
 }
 
-let enCurso: Promise<{ enviadas: number; rechazadas: number; pendientes: number }> | null = null
+export type Resultado = { enviadas: number; rechazadas: number; pendientes: number; sesionExpirada: boolean }
+let enCurso: Promise<Resultado> | null = null
+export const EVENTO_SESION_EXPIRADA = 'sesion-expirada'
 
 /** Envia en orden las pendientes. 2xx: se borra. 4xx (p.ej. 409 periodo cerrado): queda 'rechazada' visible.
- *  Error de red o 5xx: se detiene y reintenta luego. Llamadas concurrentes comparten la misma corrida. */
+ *  Error de red o 5xx: se detiene y reintenta luego. 401: se detiene, avisa 'sesion-expirada' y las marcas
+ *  quedan pendientes; al volver a iniciar sesion se reintentan (ver reintentarTrasLogin). Llamadas concurrentes comparten la misma corrida. */
 export function sincronizar(enviar: Envio) {
   if (enCurso) return enCurso
   enCurso = (async () => {
-    let enviadas = 0, rechazadas = 0
+    let enviadas = 0, rechazadas = 0, sesionExpirada = false
     for (const m of await listar()) {
       if (m.estado !== 'pendiente') continue
       const { id_idempotente, tipo, lat, lng, qr_code, ts_cliente } = m
@@ -81,6 +84,11 @@ export function sincronizar(enviar: Envio) {
         r = await enviar({ id_idempotente, tipo, lat, lng, qr_code, ts_cliente, offline: true })
       } catch {
         await tx('readwrite', s => s.put({ ...m, intentos: m.intentos + 1 }))
+        break
+      }
+      if (r.status === 401) {
+        sesionExpirada = true
+        if (typeof window !== 'undefined') window.dispatchEvent(new Event(EVENTO_SESION_EXPIRADA))
         break
       }
       if (r.status >= 200 && r.status < 300) {
@@ -97,7 +105,7 @@ export function sincronizar(enviar: Envio) {
     }
     const pendientes = (await listar()).filter(x => x.estado === 'pendiente').length
     avisar()
-    return { enviadas, rechazadas, pendientes }
+    return { enviadas, rechazadas, pendientes, sesionExpirada }
   })().finally(() => { enCurso = null })
   return enCurso
 }
@@ -111,6 +119,11 @@ export function autoSincronizar(enviar: Envio): () => void {
   const t = window.setInterval(go, 60000)
   go()
   return () => { window.removeEventListener('online', go); document.removeEventListener('visibilitychange', vis); clearInterval(t) }
+}
+
+/** Tras un login correcto: reenvia las marcas que quedaron pendientes (p. ej. por 401 con token vencido). */
+export function reintentarTrasLogin(enviar: Envio = enviarApi) {
+  return sincronizar(enviar).catch(() => null)
 }
 
 export function alCambiar(fn: () => void): () => void {

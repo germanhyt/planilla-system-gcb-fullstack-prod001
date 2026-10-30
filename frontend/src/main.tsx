@@ -10,6 +10,10 @@ import { Bonos, Periodos } from './Cierre'
 import { HEProgramadas } from './Programacion'
 import { Horarios } from './Horarios'
 import { Justificaciones } from './Justificaciones'
+import { EVENTO_SESION_EXPIRADA, reintentarTrasLogin } from './offlineQueue'
+
+// Token vencido al sincronizar marcas offline: volver al login sin perder la cola (IndexedDB persiste).
+window.addEventListener(EVENTO_SESION_EXPIRADA, () => { if (getToken()) { localStorage.removeItem('token'); location.reload() } })
 
 const EMPRESA: Campo[] = [{ k: 'codigo', label: 'Código', req: true }, { k: 'razon_social', label: 'Razón social', req: true }, { k: 'ruc', label: 'RUC', req: true }]
 const UNIDAD: Campo[] = [{ k: 'empresa_id', label: 'Empresa', tipo: 'select', opciones: '/empresas', req: true }, { k: 'codigo', label: 'Código', req: true }, { k: 'nombre', label: 'Nombre', req: true }]
@@ -28,7 +32,7 @@ function Login({ onOk }: { onOk: () => void }) {
   const [email, setEmail] = useState(''); const [password, setPassword] = useState(''); const [err, setErr] = useState('')
   const entrar = async (e: React.FormEvent) => {
     e.preventDefault()
-    try { const r = await api('/auth/login', { method: 'POST', body: { email, password } }); localStorage.setItem('token', r.access_token); onOk() }
+    try { const r = await api('/auth/login', { method: 'POST', body: { email, password } }); localStorage.setItem('token', r.access_token); reintentarTrasLogin(); onOk() }
     catch (e: any) { setErr(e.message) }
   }
   return <form className="login" onSubmit={entrar}><h1>Planillas GCB</h1>

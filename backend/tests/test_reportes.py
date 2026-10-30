@@ -1,5 +1,4 @@
 """Tests Sprint 3: Reportes consolidados y export."""
-import pytest
 
 
 def test_consolidado_mensual_json(client, H):
@@ -33,12 +32,8 @@ def test_consolidado_export_excel(client, H, ids):
         params={"periodo": "2026-10", "formato": "excel"},
         headers=H["admin"],
     )
-    if resp.status_code == 404:
-        pytest.skip("Sin datos para periodo 2026-10")
-    
-    assert resp.status_code in (200, 500)
-    if resp.status_code == 200:
-        assert resp.headers["content-type"] == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    assert resp.status_code == 200, resp.text
+    assert resp.headers["content-type"] == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
 def test_consolidado_export_csv(client, H, ids):
@@ -48,9 +43,6 @@ def test_consolidado_export_csv(client, H, ids):
         params={"periodo": "2026-10", "formato": "csv"},
         headers=H["admin"],
     )
-    if resp.status_code == 404:
-        pytest.skip("Sin datos para periodo 2026-10")
-    
     assert resp.status_code == 200
     assert resp.headers["content-type"].startswith("text/csv")
 
@@ -64,9 +56,6 @@ def test_conceptos_remunerativos(client, H, ids):
         params={"periodo": "2026-10", "empresa_id": empresa_id},
         headers=H["admin"],
     )
-    
-    if resp.status_code == 404:
-        pytest.skip("Sin datos para periodo")
     
     assert resp.status_code == 200
     data = resp.json()

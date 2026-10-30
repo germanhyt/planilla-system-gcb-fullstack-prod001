@@ -1,5 +1,4 @@
 """Tests Sprint 3: Cierre de periodos."""
-import pytest
 
 
 def test_cerrar_periodo(client, H, ids):
@@ -44,8 +43,7 @@ def test_reabrir_periodo_admin(client, H, ids):
         json={"empresa_id": empresa_id, "periodo": "2026-07", "confirmar": True},
         headers=H["admin"],
     )
-    if "id" not in cierre_resp.json():
-        pytest.skip("No se devolvió ID en cierre")
+    assert cierre_resp.status_code == 200, cierre_resp.text
     cierre_id = cierre_resp.json()["id"]
     
     resp = client.post(
@@ -67,11 +65,7 @@ def test_reabrir_periodo_rrhh_no_autorizado(client, H, ids):
         json={"empresa_id": empresa_id, "periodo": "2026-06", "confirmar": True},
         headers=H["rrhh"],
     )
-    if cierre_resp.status_code != 200:
-        pytest.skip("No se pudo cerrar periodo")
-    
-    if "id" not in cierre_resp.json():
-        pytest.skip("No se devolvió ID en cierre")
+    assert cierre_resp.status_code == 200, cierre_resp.text
     cierre_id = cierre_resp.json()["id"]
     
     resp = client.post(

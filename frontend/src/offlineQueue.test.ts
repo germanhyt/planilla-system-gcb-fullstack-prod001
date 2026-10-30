@@ -24,7 +24,7 @@ describe('cola offline de marcas', () => {
       enviados.push(body)
       return body.id_idempotente === b.id_idempotente ? { status: 409, data: { detail: 'Periodo 2026-10 cerrado' } } : { status: 200, data: {} }
     })
-    expect(r).toEqual({ enviadas: 1, rechazadas: 1, pendientes: 0 })
+    expect(r).toEqual({ enviadas: 1, rechazadas: 1, pendientes: 0, sesionExpirada: false })
     expect(enviados.every(x => x.offline === true)).toBe(true)
     expect(enviados[0].id_idempotente).toBe(a.id_idempotente)
     const l = await listar()
@@ -39,6 +39,26 @@ describe('cola offline de marcas', () => {
     const ids: string[] = []
     await sincronizar(async body => { ids.push(body.id_idempotente as string); return { status: 200, data: {} } })
     expect(ids).toEqual([a.id_idempotente])
+    expect(await listar()).toHaveLength(0)
+  })
+})
+describe('401 y reintento tras re-login', () => {
+  it('con 401 la marca queda pendiente, avisa sesion expirada y se envia tras volver a iniciar sesion', async () => {
+    for (const m of await listar()) await descartar(m.id_idempotente)
+    await encolar({ id_idempotente: uuid(), tipo: 'entrada', ts_cliente: '2026-10-30T08:00:00Z' })
+    let avisos = 0
+    const g = globalThis as any
+    const previo = g.window
+    g.window = new EventTarget()
+    g.window.addEventListener('sesion-expirada', () => { avisos++ })
+    const r1 = await sincronizar(async () => ({ status: 401, data: { detail: 'Token inválido' } }))
+    g.window = previo
+    expect(r1).toMatchObject({ enviadas: 0, rechazadas: 0, pendientes: 1, sesionExpirada: true })
+    expect(avisos).toBe(1)
+    expect((await listar())[0].estado).toBe('pendiente')
+    const { reintentarTrasLogin } = await import('./offlineQueue')
+    const r2 = await reintentarTrasLogin(async () => ({ status: 201, data: {} }))
+    expect(r2).toMatchObject({ enviadas: 1, pendientes: 0, sesionExpirada: false })
     expect(await listar()).toHaveLength(0)
   })
 })
