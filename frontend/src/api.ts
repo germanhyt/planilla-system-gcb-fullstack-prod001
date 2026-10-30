@@ -7,6 +7,10 @@ export async function api<T = any>(path: string, opts: { method?: string; body?:
   })
   if (r.status === 401 && path !== '/auth/login') { localStorage.removeItem('token'); location.reload() }
   const data = await r.json().catch(() => ({}))
-  if (!r.ok) throw new Error(typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail ?? r.status))
+  if (!r.ok) {
+    const d = data.detail
+    const msg = typeof d === 'string' ? d : typeof d?.mensaje === 'string' ? d.mensaje : JSON.stringify(d ?? r.status)
+    throw Object.assign(new Error(msg), { status: r.status, detail: d })
+  }
   return data
 }
