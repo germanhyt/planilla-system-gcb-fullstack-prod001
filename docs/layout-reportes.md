@@ -100,3 +100,4 @@ Todos los exports generan registros de auditoría que incluyen:
 
 - Sprint 3 (Octubre 2026): Layout inicial con soporte Excel/CSV
 - Próximos sprints: Agregar conceptos adicionales según normativa laboral
+- Sprint 3 / Incremento 3: el consolidado agrega horas normales, recargo nocturno (sólo CAVAS) y banco de horas; descarga `formato=csv|xlsx`; filtro por día operativo. Exportación a Planilla Core: ver [interfaz-planilla-core.md](interfaz-planilla-core.md).
