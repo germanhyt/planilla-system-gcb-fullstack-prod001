@@ -10,7 +10,21 @@ from zoneinfo import ZoneInfo
 
 from app.config import settings
 from app.db import SessionLocal
-from app.models import Empresa, HorarioPlan, Marca, RuleSet, Sede, TipoContrato, Trabajador, TurnoPlantilla, Unidad, Usuario
+from app.models import (
+    Asistencia,
+    BancoHorasCompensatorias,
+    Empresa,
+    HorarioPlan,
+    Marca,
+    RegularizacionHE,
+    RuleSet,
+    Sede,
+    TipoContrato,
+    Trabajador,
+    TurnoPlantilla,
+    Unidad,
+    Usuario,
+)
 from app.rules import CAVAS, GCB_SA
 from app.security import hash_password
 
@@ -197,8 +211,62 @@ def main():
                               sincronizado_offline=False)
                 marcas_creadas += 1
 
+    # Sprint 3 / Incremento 2: casos de ejemplo para Excepciones y Bolsa de horas.
+    # Idempotente: se omite si ya existe algún movimiento de banco con origen "Seed:".
+    if not db.scalar(select(BancoHorasCompensatorias.id).where(BancoHorasCompensatorias.origen.like("Seed:%")).limit(1)):
+        seed_excepciones(db, hoy, users)
+
     db.commit()
     print(f"Semilla OK: {n} trabajadores ficticios, {marcas_creadas} marcas de muestra, usuarios demo: {', '.join(u.email for u in users.values())}")
+
+
+def seed_excepciones(db, hoy: date, users: dict):
+    """Asistencias calculadas de ejemplo + bandeja HE (pendiente/aprobada/rechazada) + bolsa de horas + alerta PT."""
+    trab = {t.codigo: t for t in db.scalars(select(Trabajador).where(
+        Trabajador.codigo.in_(["CAV-001", "CAV-002", "CAV-007", "CAV-009", "PAR-001", "PAR-002"])))}
+    rs = {e: db.scalar(select(RuleSet.id).where(RuleSet.empresa_id == e).order_by(RuleSet.version.desc()).limit(1))
+          for e in {t.empresa_id for t in trab.values()}}
+
+    def asis(cod, dias_atras, prog, trab_h, exceso=0.0, tardanza=0):
+        t = trab[cod]
+        d = hoy - timedelta(days=dias_atras)
+        return get_or_create(db, Asistencia, {"trabajador_id": t.id, "dia_operativo": d}, periodo=d.strftime("%Y-%m"),
+                             horas_programadas=prog, horas_trabajadas=trab_h, tardanza_min=tardanza, horas_extra_25=0,
+                             horas_extra_35=0, horas_nocturnas=0, exceso_no_programado=exceso, rule_set_id=rs[t.empresa_id])
+
+    def reg(a, horas, estado="pendiente", destino=None, obs=None):
+        r = get_or_create(db, RegularizacionHE, {"asistencia_id": a.id}, trabajador_id=a.trabajador_id, horas_exceso=horas,
+                          estado=estado, destino=destino, observacion=obs,
+                          decision_por=users["jefe"].id if estado != "pendiente" else None,
+                          decision_en=datetime.now(ZoneInfo("America/Lima")) if estado != "pendiente" else None)
+        return r
+
+    def mov(cod, dias_atras, tipo, horas, saldo_ant, origen, reg_id=None, expira_en=None):
+        t = trab[cod]
+        db.add(BancoHorasCompensatorias(
+            trabajador_id=t.id, fecha_movimiento=hoy - timedelta(days=dias_atras), tipo=tipo, horas=horas,
+            saldo_anterior=saldo_ant, saldo_nuevo=saldo_ant + (horas if tipo == "credito" else -horas), origen=origen,
+            regularizacion_id=reg_id, dias_expiracion=90 if tipo == "credito" else None,
+            fecha_expira=hoy + timedelta(days=expira_en) if expira_en is not None else None))
+        db.flush()
+
+    # CAV-009 (PT85): semana con 6.5 h/día -> alerta PT (no bloquea) + HE pendiente
+    for k in range(2, 7):
+        a = asis("CAV-009", k, 4.0, 6.5 if k != 2 else 5.5, exceso=1.5 if k == 2 else 0.0)
+        if k == 2:
+            reg(a, 1.5)
+    # CAV-007 (usuario trabajador demo): bolsa con crédito y descanso tomado -> saldo 2 h
+    mov("CAV-007", 40, "credito", 3.0, 0.0, "Seed: HE compensatoria aprobada (ejemplo)", expira_en=50)
+    mov("CAV-007", 10, "debito", 1.0, 3.0, "Seed: Descanso compensatorio tomado (ejemplo)")
+    # CAV-001 (FT, Cavas -> default pago): HE pendiente + tardanza
+    reg(asis("CAV-001", 1, 8.0, 10.5, exceso=2.5, tardanza=12), 2.5)
+    # CAV-002: exceso rechazado por el jefe
+    reg(asis("CAV-002", 3, 8.0, 9.0, exceso=1.0), 1.0, "rechazado", None, "No fue solicitado (ejemplo)")
+    # PAR-001 (GCB SA -> default compensación): HE pendiente
+    reg(asis("PAR-001", 1, 8.0, 11.0, exceso=3.0), 3.0)
+    # PAR-002: HE aprobada a compensación -> crédito en bolsa, por vencer en 20 días
+    r = reg(asis("PAR-002", 15, 8.0, 10.0, exceso=0.0), 2.0, "aprobado", "compensacion", "Compensa el lunes (ejemplo)")
+    mov("PAR-002", 15, "credito", 2.0, 0.0, f"Seed: HE compensatoria aprobada (reg #{r.id})", reg_id=r.id, expira_en=20)
 
 
 def base_vacia() -> bool:
