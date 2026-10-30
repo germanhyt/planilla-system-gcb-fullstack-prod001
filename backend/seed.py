@@ -13,6 +13,7 @@ from app.db import SessionLocal
 from app.models import (
     Asistencia,
     BancoHorasCompensatorias,
+    BonoNocturno,
     Empresa,
     HorarioPlan,
     Marca,
@@ -215,6 +216,9 @@ def main():
     # Idempotente: se omite si ya existe algún movimiento de banco con origen "Seed:".
     if not db.scalar(select(BancoHorasCompensatorias.id).where(BancoHorasCompensatorias.origen.like("Seed:%")).limit(1)):
         seed_excepciones(db, hoy, users)
+    # Sprint 3 / Incremento 3: turnos nocturnos con HE y bono 3 AM para la pantalla Reportes (idempotente).
+    if not db.scalar(select(BonoNocturno.id).where(BonoNocturno.observacion.like("Seed:%")).limit(1)):
+        seed_reportes(db, hoy, users)
 
     db.commit()
     print(f"Semilla OK: {n} trabajadores ficticios, {marcas_creadas} marcas de muestra, usuarios demo: {', '.join(u.email for u in users.values())}")
@@ -267,6 +271,23 @@ def seed_excepciones(db, hoy: date, users: dict):
     # PAR-002: HE aprobada a compensación -> crédito en bolsa, por vencer en 20 días
     r = reg(asis("PAR-002", 15, 8.0, 10.0, exceso=0.0), 2.0, "aprobado", "compensacion", "Compensa el lunes (ejemplo)")
     mov("PAR-002", 15, "credito", 2.0, 0.0, f"Seed: HE compensatoria aprobada (reg #{r.id})", reg_id=r.id, expira_en=20)
+
+def seed_reportes(db, hoy: date, users: dict):
+    """Turno 22:00-07:00 (HE 25% + horas nocturnas) en CAVAS (recargo aparte) y GCB SA (sin recargo) + bono 3 AM aprobado."""
+    for cod in ("CAV-003", "PAR-001"):
+        t = db.scalar(select(Trabajador).where(Trabajador.codigo == cod))
+        if not t:
+            continue
+        rs = db.scalar(select(RuleSet.id).where(RuleSet.empresa_id == t.empresa_id).order_by(RuleSet.version.desc()).limit(1))
+        d = hoy - timedelta(days=2)
+        get_or_create(db, Asistencia, {"trabajador_id": t.id, "dia_operativo": d}, periodo=d.strftime("%Y-%m"),
+                      horas_programadas=8, horas_trabajadas=9, tardanza_min=0, horas_extra_programadas=1,
+                      horas_extra_25=1, horas_extra_35=0, horas_nocturnas=8, exceso_no_programado=0, rule_set_id=rs)
+        if cod == "CAV-003":
+            get_or_create(db, BonoNocturno, {"trabajador_id": t.id, "periodo": d.strftime("%Y-%m")}, cantidad=2,
+                          estado="aprobado", observacion="Seed: cierres 3 AM (ejemplo)", registrado_por=users["admin"].id,
+                          aprobado_por=users["admin"].id)
+    db.flush()
 
 
 def base_vacia() -> bool:
