@@ -7,7 +7,7 @@ export async function login(page: Page, email: string) {
   await page.getByPlaceholder('Correo').fill(email)
   await page.getByPlaceholder('Contraseña').fill(PASSWORD)
   await page.getByRole('button', { name: 'Ingresar' }).click()
-  await expect(page.getByRole('heading', { name: 'Mi perfil' })).toBeVisible()
+  await expect(page.getByRole('navigation', { name: 'Menú principal' })).toBeVisible()
 }
 
 export async function abrir(page: Page, menu: string, titulo: string | RegExp) {
