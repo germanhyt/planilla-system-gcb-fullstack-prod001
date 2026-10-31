@@ -102,6 +102,10 @@ class UsuarioUpd(BaseModel):
     nombre: Optional[str] = None
 
 
+class UsuarioEmpresaIn(BaseModel):
+    empresa_id: Optional[int] = None  # null = usuario global (sin empresa fija)
+
+
 class PerfilUpd(BaseModel):
     nombre: Optional[str] = None
     telefono: Optional[str] = None

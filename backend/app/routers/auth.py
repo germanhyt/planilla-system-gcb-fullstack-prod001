@@ -8,7 +8,7 @@ from ..audit import audit, to_dict
 from ..db import get_db
 from ..deps import current_user, require
 from ..models import Empresa, Trabajador, Unidad, Usuario
-from ..schemas import LoginIn, PasswordUpd, PerfilUpd, UsuarioIn, UsuarioUpd
+from ..schemas import LoginIn, PasswordUpd, PerfilUpd, UsuarioEmpresaIn, UsuarioIn, UsuarioUpd
 from ..security import create_token, hash_password, verify_password
 
 r = APIRouter(tags=["auth"])
@@ -108,5 +108,23 @@ def update_user(uid: int, body: UsuarioUpd, request: Request, db: Session = Depe
         setattr(nu, k, v)
     nu.empresa_id = _empresa_usuario(db, nu.rol, nu.unidad_id, nu.empresa_id)
     audit(db, u.id, "actualizar", "usuario", nu.id, antes, to_dict(nu), _ip(request))
+    db.commit()
+    return to_dict(nu)
+
+
+@r.put("/usuarios/{uid}/empresa")
+def cambiar_empresa_usuario(uid: int, body: UsuarioEmpresaIn, request: Request, db: Session = Depends(get_db),
+                            u: Usuario = Depends(require("admin"))):
+    """Solo admin: fija (o quita, con null) la empresa del usuario. Un jefe debe quedar en la empresa de su unidad."""
+    nu = db.get(Usuario, uid)
+    if not nu:
+        raise HTTPException(404, "Usuario no encontrado")
+    if nu.rol == "jefe" and nu.unidad_id:
+        un = db.get(Unidad, nu.unidad_id)
+        if body.empresa_id != (un.empresa_id if un else None):
+            raise HTTPException(422, "Un jefe debe pertenecer a la empresa de su unidad; cambie primero la unidad")
+    antes = to_dict(nu)
+    nu.empresa_id = _empresa_usuario(db, nu.rol, nu.unidad_id, body.empresa_id)
+    audit(db, u.id, "cambiar_empresa", "usuario", nu.id, antes, to_dict(nu), _ip(request))
     db.commit()
     return to_dict(nu)

@@ -11,6 +11,7 @@ import { HEProgramadas } from './Programacion'
 import { Horarios } from './Horarios'
 import { Justificaciones } from './Justificaciones'
 import { Configuracion } from './Configuracion'
+import { Usuarios } from './Usuarios'
 import { EVENTO_SESION_EXPIRADA, reintentarTrasLogin } from './offlineQueue'
 
 // Token vencido al sincronizar marcas offline: volver al login sin perder la cola (IndexedDB persiste).
@@ -71,7 +72,7 @@ function App() {
   const r = me.rol; const admin = r === 'admin'; const rrhh = r === 'rrhh' || admin; const jefe = r === 'jefe' || rrhh
   const trabajador = r === 'trabajador' || jefe
   const menu: [string, string, boolean][] = [['perfil', 'Mi perfil', true], ['marcar', 'Marcar asistencia', trabajador], ['mis-marcas', 'Mis marcas', r === 'trabajador'], ['marcas', 'Marcas', jefe], ['horarios', 'Horarios', jefe], ['he', 'Horas extra programadas', trabajador], ['justificaciones', r === 'trabajador' ? 'Justificar falta' : 'Justificaciones', trabajador], ['excepciones', 'Excepciones', jefe], ['reportes', 'Reportes', jefe], ['bonos', 'Bono 3 AM', rrhh], ['periodos', 'Cierre de periodo', rrhh], ['bolsa', r === 'trabajador' ? 'Mi bolsa de horas' : 'Bolsa de horas', true], ['empresas', 'Empresas', jefe], ['unidades', 'Unidades', jefe], ['sedes', 'Sedes', jefe],
-    ['contratos', 'Tipos de contrato', jefe], ['trabajadores', 'Trabajadores', jefe], ['reglas', 'Reglas', jefe && !rrhh], ['configuracion', 'Configuración', rrhh]]
+    ['contratos', 'Tipos de contrato', jefe], ['trabajadores', 'Trabajadores', jefe], ['reglas', 'Reglas', jefe && !rrhh], ['usuarios', 'Usuarios', admin], ['configuracion', 'Configuración', rrhh]]
   return <div><nav>{menu.filter(m => m[2]).map(([k, l]) => <button key={k} className={vista === k ? 'act' : ''} onClick={() => setVista(k)}>{l}</button>)}
     <span>{me.nombre} ({r})</span><button onClick={() => { localStorage.removeItem('token'); location.reload() }}>Salir</button></nav>
     <main>
@@ -93,6 +94,7 @@ function App() {
       {vista === 'contratos' && <Crud titulo="Tipos de contrato" ruta="/tipos-contrato" campos={CONTRATO} puedeEscribir={admin} />}
       {vista === 'trabajadores' && <Crud titulo="Trabajadores" ruta="/trabajadores" campos={TRAB} puedeEscribir={rrhh} />}
       {vista === 'reglas' && <Reglas />}
+      {vista === 'usuarios' && <Usuarios />}
       {vista === 'configuracion' && <Configuracion admin={admin} contrato={CONTRATO} />}
     </main></div>
 }
