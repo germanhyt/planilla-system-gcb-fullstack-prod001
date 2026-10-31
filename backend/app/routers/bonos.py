@@ -15,6 +15,7 @@ from ..audit import audit, to_dict
 from ..cierre import esta_cerrado, exigir_abierto
 from ..db import get_db
 from ..deps import require
+from ..paginacion import paginar_sql, params_pagina
 from ..models import BonoNocturno, BonoNocturnoHistorial, Trabajador, Usuario
 from ..schemas import BonoDecision, BonoIn
 
@@ -39,7 +40,8 @@ def _out(db: Session, b: BonoNocturno, t: Optional[Trabajador] = None, nombres: 
 
 @r.get("")
 def listar(periodo: Optional[str] = None, empresa_id: Optional[int] = None, estado: Optional[str] = None,
-           db: Session = Depends(get_db), u: Usuario = Depends(require("rrhh", "admin"))):
+           db: Session = Depends(get_db), u: Usuario = Depends(require("rrhh", "admin")),
+           pag: Optional[dict] = Depends(params_pagina)):
     empresa_id = empresa_alcance(u, empresa_id)
     q = select(BonoNocturno, Trabajador).join(Trabajador, Trabajador.id == BonoNocturno.trabajador_id) \
         .order_by(Trabajador.codigo, BonoNocturno.id)
@@ -50,7 +52,15 @@ def listar(periodo: Optional[str] = None, empresa_id: Optional[int] = None, esta
     if estado:
         q = q.where(BonoNocturno.estado == estado)
     nombres = dict(db.execute(select(Usuario.id, Usuario.email)).all())
-    return [_out(db, b, t, nombres) for b, t in db.execute(q)]
+    if pag is None:
+        return [_out(db, b, t, nombres) for b, t in db.execute(q)]
+    # S8 paso 7: paginado en la BD (q por código/nombre/periodo; orden estable por id)
+    return paginar_sql(db, q.order_by(None), pag, lambda r: _out(db, r[0], r[1], nombres),
+                       buscar=(Trabajador.codigo, Trabajador.nombres, Trabajador.apellidos, BonoNocturno.periodo),
+                       orden={"trabajador_codigo": Trabajador.codigo, "trabajador": Trabajador.apellidos,
+                              "periodo": BonoNocturno.periodo, "estado": BonoNocturno.estado,
+                              "cantidad": BonoNocturno.cantidad, "monto": BonoNocturno.monto},
+                       orden_def=(Trabajador.codigo,), desempate=(BonoNocturno.id,))
 
 
 @r.post("", status_code=201)
