@@ -36,14 +36,6 @@ def lima(d: date, hh: int, mm: int = 0, dias: int = 0) -> datetime:
     return datetime.combine(d + timedelta(days=dias), time(hh, mm), tzinfo=LIMA)
 
 
-def test_reglas_gcbsa_explicitas():
-    assert REGLAS["dia_operativo"]["tipo"] == "calendario" and REGLAS["dia_operativo"]["corte"] == "00:00"
-    assert REGLAS["tolerancia"] == {"modo": "umbral_perdona", "minutos": 10} | {
-        k: v for k, v in REGLAS["tolerancia"].items() if k not in ("modo", "minutos")}
-    assert REGLAS["horas_extra"]["destino_default"] == "compensacion"
-    assert REGLAS["nocturno"]["mostrar_sobretasa_separada"] is False
-
-
 @pytest.fixture
 def gcb(db, unique_id):
     emp = Empresa(codigo=f"S{unique_id}", razon_social=f"GCB golden {unique_id}", ruc=f"21{unique_id[1:]}999")

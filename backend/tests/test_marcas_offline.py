@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import select
+from zoneinfo import ZoneInfo
 
 from app.models import CierrePeriodo, Marca, Trabajador, Usuario
 
@@ -73,10 +74,12 @@ def test_offline_requiere_ts_cliente(client, H):
 
 
 def test_bandeja_muestra_diferida_sobre_umbral(client, H, trab):
-    hoy = datetime.now(timezone.utc).astimezone().date().isoformat()
+    # Dia Lima (no la TZ del contenedor) y rango de 2 dias: una marca de hace 60 min puede caer en el dia anterior
+    hoy_d = datetime.now(ZoneInfo("America/Lima")).date()
+    hoy, ayer = hoy_d.isoformat(), (hoy_d - timedelta(days=1)).isoformat()
     sobre = _offline(client, H, 60).json()["id"]  # 60 min > umbral 15
     bajo = _offline(client, H, 5, tipo="salida").json()["id"]  # 5 min <= umbral: no va a la bandeja
-    items = client.get(f"/excepciones/bandeja?desde={hoy}&hasta={hoy}&tipo=marca_diferida", headers=H["rrhh"]).json()
+    items = client.get(f"/excepciones/bandeja?desde={ayer}&hasta={hoy}&tipo=marca_diferida", headers=H["rrhh"]).json()
     refs = {i["ref_id"] for i in items}
     assert sobre in refs and bajo not in refs
     assert all(i["tipo"] == "marca_diferida" and "umbral 15 min" in i["detalle"] for i in items)
