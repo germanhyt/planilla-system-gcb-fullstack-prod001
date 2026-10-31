@@ -341,3 +341,58 @@ class HorarioAsignacion(Base):
     nota: Mapped[Optional[str]] = mapped_column(Text)
     creado_por: Mapped[int] = mapped_column(ForeignKey("usuario.id"))
     creado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ExportPlanilla(Base):
+    """Sprint 7: version de un archivo de interfaz Planilla Core (PC-ASIS) por empresa+periodo+formato.
+
+    Re-exportar con el mismo contenido (checksum) devuelve la misma version; si cambia, se crea la siguiente."""
+    __tablename__ = "export_planilla"
+    __table_args__ = (UniqueConstraint("empresa_id", "periodo", "formato", "version"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    empresa_id: Mapped[int] = mapped_column(ForeignKey("empresa.id"), index=True)
+    periodo: Mapped[str] = mapped_column(String(7), index=True)
+    formato: Mapped[str] = mapped_column(String(10))  # csv|json
+    version: Mapped[int] = mapped_column(Integer)
+    estado: Mapped[str] = mapped_column(String(15))  # PRELIMINAR|FINAL
+    layout_version: Mapped[str] = mapped_column(String(20))
+    checksum: Mapped[str] = mapped_column(String(64), index=True)  # sha256 del contenido de negocio
+    archivo: Mapped[str] = mapped_column(String(120))
+    contenido: Mapped[str] = mapped_column(Text)
+    trabajadores: Mapped[int] = mapped_column(Integer, default=0)
+    lineas: Mapped[int] = mapped_column(Integer, default=0)
+    generado_por: Mapped[Optional[int]] = mapped_column(ForeignKey("usuario.id"))
+    generado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Trabajo(Base):
+    """Sprint 7: trabajo en segundo plano (RQ) con estado y progreso consultables."""
+    __tablename__ = "trabajo"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tipo: Mapped[str] = mapped_column(String(30))  # recalcular|export_lote|alertas
+    estado: Mapped[str] = mapped_column(String(15), default="pendiente")  # pendiente|en_curso|ok|error
+    progreso: Mapped[int] = mapped_column(Integer, default=0)
+    total: Mapped[int] = mapped_column(Integer, default=0)
+    empresa_id: Mapped[Optional[int]] = mapped_column(ForeignKey("empresa.id"), index=True)
+    parametros: Mapped[dict] = mapped_column(JSONT, default=dict)
+    resultado: Mapped[Optional[dict]] = mapped_column(JSONT)
+    error: Mapped[Optional[str]] = mapped_column(Text)
+    creado_por: Mapped[Optional[int]] = mapped_column(ForeignKey("usuario.id"))
+    creado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    terminado_en: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+
+class Notificacion(Base):
+    """Sprint 7: alertas internas para RRHH (sin correo). `clave` unica = la misma alerta no se duplica."""
+    __tablename__ = "notificacion"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    empresa_id: Mapped[int] = mapped_column(ForeignKey("empresa.id"), index=True)
+    periodo: Mapped[str] = mapped_column(String(7), index=True)
+    tipo: Mapped[str] = mapped_column(String(40))
+    clave: Mapped[str] = mapped_column(String(160), unique=True)
+    mensaje: Mapped[str] = mapped_column(Text)
+    datos: Mapped[Optional[dict]] = mapped_column(JSONT)
+    activa: Mapped[bool] = mapped_column(Boolean, default=True)  # False = la condicion ya no se cumple
+    leida_por: Mapped[Optional[int]] = mapped_column(ForeignKey("usuario.id"))
+    leida_en: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    creada_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

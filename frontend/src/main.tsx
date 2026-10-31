@@ -12,6 +12,8 @@ import { Horarios } from './Horarios'
 import { Justificaciones } from './Justificaciones'
 import { Configuracion } from './Configuracion'
 import { Usuarios } from './Usuarios'
+import { Notificaciones, useConteoNotificaciones } from './Trabajos'
+import { textoBadge } from './trabajosLib'
 import { EVENTO_SESION_EXPIRADA, reintentarTrasLogin } from './offlineQueue'
 
 // Token vencido al sincronizar marcas offline: volver al login sin perder la cola (IndexedDB persiste).
@@ -68,12 +70,14 @@ function App() {
   const [me, setMe] = useState<any>(null); const [vista, setVista] = useState('perfil')
   const cargar = () => getToken() && api('/me').then(setMe).catch(() => setMe(null))
   useEffect(() => { cargar() }, [])
+  const [tick, setTick] = useState(0)
+  const noLeidas = useConteoNotificaciones(!!me && (me.rol === 'rrhh' || me.rol === 'admin'), tick)
   if (!getToken() || !me) return <Login onOk={cargar} />
   const r = me.rol; const admin = r === 'admin'; const rrhh = r === 'rrhh' || admin; const jefe = r === 'jefe' || rrhh
   const trabajador = r === 'trabajador' || jefe
-  const menu: [string, string, boolean][] = [['perfil', 'Mi perfil', true], ['marcar', 'Marcar asistencia', trabajador], ['mis-marcas', 'Mis marcas', r === 'trabajador'], ['marcas', 'Marcas', jefe], ['horarios', 'Horarios', jefe], ['he', 'Horas extra programadas', trabajador], ['justificaciones', r === 'trabajador' ? 'Justificar falta' : 'Justificaciones', trabajador], ['excepciones', 'Excepciones', jefe], ['reportes', 'Reportes', jefe], ['bonos', 'Bono 3 AM', rrhh], ['periodos', 'Cierre de periodo', rrhh], ['bolsa', r === 'trabajador' ? 'Mi bolsa de horas' : 'Bolsa de horas', true], ['empresas', 'Empresas', jefe], ['unidades', 'Unidades', jefe], ['sedes', 'Sedes', jefe],
+  const menu: [string, string, boolean][] = [['perfil', 'Mi perfil', true], ['marcar', 'Marcar asistencia', trabajador], ['mis-marcas', 'Mis marcas', r === 'trabajador'], ['marcas', 'Marcas', jefe], ['horarios', 'Horarios', jefe], ['he', 'Horas extra programadas', trabajador], ['justificaciones', r === 'trabajador' ? 'Justificar falta' : 'Justificaciones', trabajador], ['excepciones', 'Excepciones', jefe], ['reportes', 'Reportes', jefe], ['bonos', 'Bono 3 AM', rrhh], ['periodos', 'Cierre de periodo', rrhh], ['notificaciones', 'Notificaciones', rrhh], ['bolsa', r === 'trabajador' ? 'Mi bolsa de horas' : 'Bolsa de horas', true], ['empresas', 'Empresas', jefe], ['unidades', 'Unidades', jefe], ['sedes', 'Sedes', jefe],
     ['contratos', 'Tipos de contrato', jefe], ['trabajadores', 'Trabajadores', jefe], ['reglas', 'Reglas', jefe && !rrhh], ['usuarios', 'Usuarios', admin], ['configuracion', 'Configuración', rrhh]]
-  return <div><nav>{menu.filter(m => m[2]).map(([k, l]) => <button key={k} className={vista === k ? 'act' : ''} onClick={() => setVista(k)}>{l}</button>)}
+  return <div><nav>{menu.filter(m => m[2]).map(([k, l]) => <button key={k} className={vista === k ? 'act' : ''} onClick={() => setVista(k)}>{l}{k === 'notificaciones' && noLeidas > 0 && <b data-testid="badge-notif" className="badge">{textoBadge(noLeidas)}</b>}</button>)}
     <span>{me.nombre} ({r})</span><button onClick={() => { localStorage.removeItem('token'); location.reload() }}>Salir</button></nav>
     <main>
       {vista === 'perfil' && <Perfil me={me} recargar={cargar} />}
@@ -88,6 +92,7 @@ function App() {
       {vista === 'reportes' && <Reportes rol={r} />}
       {vista === 'bonos' && <Bonos rol={r} meId={me.id} />}
       {vista === 'periodos' && <Periodos rol={r} />}
+      {vista === 'notificaciones' && <Notificaciones onCambio={() => setTick(x => x + 1)} />}
       {vista === 'empresas' && <Crud titulo="Empresas" ruta="/empresas" campos={EMPRESA} puedeEscribir={admin} />}
       {vista === 'unidades' && <Crud titulo="Unidades" ruta="/unidades" campos={UNIDAD} puedeEscribir={admin} />}
       {vista === 'sedes' && <Crud titulo="Sedes" ruta="/sedes" campos={SEDE} puedeEscribir={admin} />}
@@ -103,6 +108,6 @@ const css = `body{font-family:system-ui;margin:0}nav{background:#1e3a5f;padding:
 nav .act{font-weight:bold}main{padding:12px}table{border-collapse:collapse;width:100%;font-size:14px}td,th{border:1px solid #ccc;padding:4px}
 .form{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;background:#f4f6fa;padding:10px;margin-bottom:10px}label{display:flex;flex-direction:column;font-size:13px}
 .login{max-width:320px;margin:80px auto;display:flex;flex-direction:column;gap:8px}.err{color:#b00}
-.alerta{color:#8a5a00;background:#fff4dc;padding:2px 6px;font-size:12px;margin-top:2px}.decision{display:flex;flex-wrap:wrap;gap:4px;align-items:center}tr.sel{background:#eef4ff}`
+.alerta{color:#8a5a00;background:#fff4dc;padding:2px 6px;font-size:12px;margin-top:2px}.decision{display:flex;flex-wrap:wrap;gap:4px;align-items:center}tr.sel{background:#eef4ff}.badge{background:#c62828;color:#fff;border-radius:9px;padding:0 6px;margin-left:4px;font-size:11px}`
 document.head.insertAdjacentHTML('beforeend', `<style>${css}</style>`)
 createRoot(document.getElementById('root')!).render(<App />)

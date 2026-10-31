@@ -1,10 +1,12 @@
 """Decisiones del PO (pt54u): HE programadas GCB SA al banco; empresa del usuario editable solo por admin."""
+from datetime import date
+
 import pytest
 from sqlalchemy import select
 
 from app.engine import calcular_asistencia_dia, recalcular_trabajador_periodo
-from app.models import Asistencia, Auditoria, BancoHorasCompensatorias, HEProgramada, Usuario
-from app.rules import BASE, CAVAS, efectivas
+from app.models import Asistencia, Auditoria, BancoHorasCompensatorias, HEProgramada, RuleSet, Usuario
+from app.rules import BASE, CAVAS, GCB_SA_V2, efectivas
 from tests.test_engine_golden_gcbsa import LUNES, REGLAS, lima
 from tests.test_engine_golden_gcbsa import gcb as gcb  # noqa: F401 - fixture reutilizada
 
@@ -12,7 +14,17 @@ from tests.test_engine_golden_gcbsa import gcb as gcb  # noqa: F401 - fixture re
 def test_destino_programadas_por_empresa():
     assert BASE["horas_extra"]["destino_programadas"] == "pago"
     assert efectivas(CAVAS)["horas_extra"]["destino_programadas"] == "pago"
-    assert REGLAS["horas_extra"]["destino_programadas"] == "compensacion"
+    assert REGLAS["horas_extra"]["destino_programadas"] == "pago"  # GCB SA v1 (restaurada, pt57u)
+    assert V2["horas_extra"]["destino_programadas"] == "compensacion"  # GCB SA v2
+
+
+V2 = efectivas(GCB_SA_V2)
+
+
+def con_v2(db, emp):
+    """La empresa de prueba pasa a GCB SA v2 (nueva version de rule_set, como en prod desde 2026-11-01)."""
+    db.add(RuleSet(empresa_id=emp.id, version=2, valid_from=date(2025, 1, 1), config=GCB_SA_V2, motivo="test v2"))
+    db.commit()
 
 
 def _he(db, t, horas=2.0):
@@ -26,7 +38,7 @@ def test_he_programada_gcb_va_al_banco_no_a_pago(db, gcb):  # noqa: F811
     t = trabajador("dia")
     _he(db, t)
     marcar(t, lima(LUNES, 8), lima(LUNES, 18))
-    r = calcular_asistencia_dia(db, t.id, LUNES, REGLAS)
+    r = calcular_asistencia_dia(db, t.id, LUNES, V2)
     assert (r["horas_extra_25"], r["horas_extra_35"], r["horas_extra_banco"], r["exceso_no_programado"]) == (0, 0, 2.0, 0)
     pago = calcular_asistencia_dia(db, t.id, LUNES, efectivas(CAVAS) | {"dia_operativo": REGLAS["dia_operativo"]})
     assert (pago["horas_extra_25"], pago["horas_extra_banco"]) == (2.0, 0.0)
@@ -34,6 +46,7 @@ def test_he_programada_gcb_va_al_banco_no_a_pago(db, gcb):  # noqa: F811
 
 def test_cierre_acredita_banco_una_sola_vez(client, H, db, gcb):  # noqa: F811
     emp, trabajador, marcar = gcb
+    con_v2(db, emp)
     t = trabajador("dia")
     _he(db, t)
     marcar(t, lima(LUNES, 8), lima(LUNES, 18))

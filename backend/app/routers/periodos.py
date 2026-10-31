@@ -134,6 +134,7 @@ def recalcular(empresa_id: int = Query(...), periodo: str = Query(..., pattern=P
     """Recalcula asistencias del periodo (todos los trabajadores activos o uno). Conserva las
     regularizaciones ya decididas; 409 si el periodo está cerrado."""
     from ..cierre import exigir_abierto
+    from ..config import settings
     from ..engine import recalcular_trabajador_periodo
     _gestor(user)
     empresa_alcance(user, empresa_id)
@@ -144,7 +145,17 @@ def recalcular(empresa_id: int = Query(...), periodo: str = Query(..., pattern=P
     if trabajador_id is not None:
         q = q.filter(Trabajador.id == trabajador_id)
     tids = [t for (t,) in q]
+    if len(tids) > settings.jobs_umbral_sync:
+        # Sprint 7: recalculos grandes -> trabajo RQ con progreso (GET /trabajos/{id}).
+        from .. import trabajos
+        t = trabajos.crear(db, "recalcular", {"empresa_id": empresa_id, "periodo": periodo, "trabajadores": tids},
+                           user.id, empresa_id, total=len(tids))
+        modo = trabajos.encolar(t.id)
+        db.expire_all()
+        tr = trabajos.out(db.get(type(t), t.id))
+        return {"periodo": periodo, "trabajo": tr | {"modo": modo},
+                "trabajadores_recalculados": (tr["resultado"] or {}).get("trabajadores_recalculados")}
     hechos = sum(1 for tid in tids if recalcular_trabajador_periodo(db, tid, periodo))
     audit(db, user.id, "recalcular", "periodo", empresa_id, None, {"periodo": periodo, "trabajadores": hechos})
     db.commit()
-    return {"periodo": periodo, "trabajadores_recalculados": hechos}
+    return {"periodo": periodo, "trabajadores_recalculados": hechos, "trabajo": None}

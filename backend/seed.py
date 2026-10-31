@@ -12,6 +12,7 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from zoneinfo import ZoneInfo
 
+from app.audit import audit
 from app.config import settings
 from app.db import SessionLocal
 from app.models import (
@@ -31,7 +32,7 @@ from app.models import (
     Unidad,
     Usuario,
 )
-from app.rules import CAVAS, CAVAS_DEMO, CAVAS_REAL_DESDE, GCB_SA
+from app.rules import CAVAS, CAVAS_DEMO, CAVAS_REAL_DESDE, GCB_SA, GCB_SA_V2_DESDE, GCB_SA_V2_MOTIVO, config_v2
 from app.security import hash_password
 
 rnd = random.Random(2026)
@@ -108,7 +109,26 @@ def seed_config(db, demo: bool = False):
         db.add(RuleSet(empresa_id=cav.id, version=ver, valid_from=CAVAS_REAL_DESDE, config=CAVAS,
                        motivo="Reglas reales CAVAS (PO): tolerancia 10, corte 06:00, HE pago, nocturno aparte"))
     db.flush()
+    publicar_gcb_v2(db, gcb.id)
     return tc, cav, gcb
+
+
+def publicar_gcb_v2(db, empresa_id):
+    """GCB SA: nueva version de rule_set (HE programadas -> compensacion) vigente desde 2026-11-01. Idempotente y
+    auditada; parte de la config vigente a esa fecha (no pisa ediciones). Misma logica que la migracion 9d2e4f6a8b10."""
+    rss = db.query(RuleSet).filter(RuleSet.empresa_id == empresa_id).all()
+    if any(r.motivo == GCB_SA_V2_MOTIVO or r.valid_from == GCB_SA_V2_DESDE for r in rss):
+        return None
+    base = max((r for r in rss if r.valid_from <= GCB_SA_V2_DESDE), key=lambda r: r.valid_from, default=None)
+    if base is None:
+        return None
+    rs = RuleSet(empresa_id=empresa_id, version=max(r.version for r in rss) + 1, valid_from=GCB_SA_V2_DESDE,
+                 config=config_v2(base.config), motivo=GCB_SA_V2_MOTIVO)
+    db.add(rs)
+    db.flush()
+    audit(db, None, "crear", "rule_set", rs.id, {"base_rule_set_id": base.id, "base_version": base.version},
+          {"version": rs.version, "valid_from": rs.valid_from.isoformat(), "motivo": rs.motivo, "origen": "seed"})
+    return rs
 
 
 def _seed_demo(db, tc, cav, gcb):
@@ -166,7 +186,13 @@ def _seed_demo(db, tc, cav, gcb):
                       viernes_plantilla_id=tp, sabado_plantilla_id=tp, domingo_plantilla_id=None, creado_por=j_ref.id)
     
     # Sprint 3: Agregar horarios semanales de muestra para trabajadores
-    trabajadores = db.scalars(select(Trabajador).where(Trabajador.activo).limit(10)).all()
+    # S7: orden determinista y una consulta por unidad. Antes `limit(10)` sin ORDER BY + slices [:5]/[5:8]
+    # dejaban a Parking sin horario (los 10 primeros eran casi siempre de Cavas).
+    trabajadores = db.scalars(select(Trabajador).where(Trabajador.activo).order_by(Trabajador.id).limit(10)).all()
+    cavas_plan = db.scalars(select(Trabajador).where(Trabajador.activo, Trabajador.unidad_id == u_cav.id)
+                            .order_by(Trabajador.id).limit(5)).all()
+    parking_plan = db.scalars(select(Trabajador).where(Trabajador.activo, Trabajador.unidad_id == u_par.id)
+                              .order_by(Trabajador.id).limit(3)).all()
     turnos_cavas_ids = db.scalars(select(TurnoPlantilla.id).where(TurnoPlantilla.unidad_id == u_cav.id)).all()
     turnos_parking_ids = db.scalars(select(TurnoPlantilla.id).where(TurnoPlantilla.unidad_id == u_par.id)).all()
     
@@ -174,8 +200,8 @@ def _seed_demo(db, tc, cav, gcb):
     hoy = date.today()
     semana_inicio = hoy - timedelta(days=hoy.weekday())
     
-    for trab in trabajadores[:5]:  # primeros 5 de Cavas
-        if trab.unidad_id == u_cav.id and turnos_cavas_ids:
+    for trab in cavas_plan:  # primeros 5 de Cavas
+        if turnos_cavas_ids:
             lun_tur = rnd.choice(turnos_cavas_ids)
             mar_tur = rnd.choice(turnos_cavas_ids)
             mie_tur = rnd.choice(turnos_cavas_ids)
@@ -198,8 +224,8 @@ def _seed_demo(db, tc, cav, gcb):
                 creado_por=users["admin"].id,
             )
     
-    for trab in trabajadores[5:8]:  # algunos de Parking
-        if trab.unidad_id == u_par.id and turnos_parking_ids:
+    for trab in parking_plan:  # primeros 3 de Parking
+        if turnos_parking_ids:
             turno = rnd.choice(turnos_parking_ids)
             get_or_create(
                 db,

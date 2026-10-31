@@ -143,6 +143,6 @@ def test_semilla_prod_solo_configuracion(bd_vacia):
     tcs = {t.codigo: t.refrigerio_min for t in s.scalars(select(TipoContrato))}
     assert tcs == {"FT": 45, "PT85": 45, "PT102": 45}
     rs = {(e, str(v)) for e, v in s.execute(select(Empresa.codigo, RuleSet.valid_from).join(Empresa))}
-    assert rs == {("CAVAS", "2026-11-01"), ("GCBSA", "2026-01-01")}
+    assert rs == {("CAVAS", "2026-11-01"), ("GCBSA", "2026-01-01"), ("GCBSA", "2026-11-01")}  # GCB v2 (pt57u)
     assert s.scalar(select(func.count()).select_from(Trabajador)) == 0
     assert s.scalar(select(func.count()).select_from(Usuario)) == 0

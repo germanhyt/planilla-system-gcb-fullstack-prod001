@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from './api'
+import { ProgresoTrabajo, useTrabajo } from './Trabajos'
 
 const mesActual = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Lima' }).slice(0, 7)
 const soles = (v: any) => v === null || v === undefined || v === '' ? '—' : `S/ ${Number(v).toFixed(2)}`
@@ -72,6 +73,7 @@ export function Periodos({ rol }: { rol: string }) {
   const [empresa, setEmpresa] = useState(''); const [periodo, setPeriodo] = useState(mesActual())
   const [ck, setCk] = useState<any>(null); const [hist, setHist] = useState<any[]>([]); const [msg, setMsg] = useState('')
   const [confirmando, setConfirmando] = useState(false);
+  const { trabajo, seguir, limpiar } = useTrabajo()
   useEffect(() => { if (!empresa && emps.length) setEmpresa(String(emps[0].id)) }, [emps])
   const cargar = () => {
     if (!empresa) return
@@ -92,12 +94,23 @@ export function Periodos({ rol }: { rol: string }) {
     try { await api(`/periodos/reabrir/${c.id}`, { method: 'POST', body: { razon_reapertura: razon } }); setMsg(`Periodo ${c.periodo} reabierto.`); cargar() }
     catch (e: any) { setMsg(e.message) }
   }
+  const recalcular = async () => {
+    setMsg(''); limpiar()
+    try {
+      const r = await api(`/periodos/recalcular?empresa_id=${empresa}&periodo=${periodo}`, { method: 'POST' })
+      if (r.trabajo) { const fin = await seguir(r.trabajo); setMsg(fin.estado === 'ok' ? `Recalculo de ${periodo} completado.` : `Recalculo con error: ${fin.error}`) }
+      else setMsg(`Recalculados ${r.trabajadores_recalculados} trabajador(es).`)
+      cargar()
+    } catch (e: any) { setMsg(e.message) }
+  }
   const pend = ck?.total_pendientes ?? 0
   return <section><h2>Cierre de periodo</h2>
     <p className="nota">Periodo = mes calendario por día operativo. Cerrado: se bloquean marcas, regularizaciones y bonos (409). Exportación FINAL a Planilla Core sólo con periodo cerrado. Reabrir: sólo admin, con motivo (auditado).</p>
     <label>Empresa <select value={empresa} onChange={e => setEmpresa(e.target.value)}>{emps.map(e => <option key={e.id} value={e.id}>{e.codigo}</option>)}</select></label>
     <label>Periodo <input type="month" value={periodo} onChange={e => setPeriodo(e.target.value)} /></label>
     <button onClick={cargar}>Actualizar</button>
+    {!ck?.cerrado && <button onClick={recalcular}>Recalcular periodo</button>}
+    <ProgresoTrabajo t={trabajo} />
     {msg && <p className="err">{msg}</p>}
     {ck && <div><h3>Checklist {ck.periodo} ({ck.desde} a {ck.hasta}) — {ck.cerrado ? '🔒 CERRADO' : 'abierto'}</h3>
       <ul>{Object.entries(ck.conteos).map(([k, v]: any) => <li key={k} className={v ? 'warn' : ''}>{v ? '⚠️' : '✅'} {ETIQUETAS[k] || k}: <b>{v}</b>

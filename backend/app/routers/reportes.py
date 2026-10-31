@@ -9,14 +9,13 @@
 - Jefe: sólo su unidad. RRHH/admin: todo.
 """
 import csv
-import json
 from collections import defaultdict
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, timedelta
 from io import BytesIO, StringIO
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from sqlalchemy import func, select
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..alcance import empresa_alcance
@@ -25,11 +24,11 @@ from ..db import get_db
 from ..deps import current_user
 from ..models import (
     Asistencia,
-    Auditoria,
     BancoHorasCompensatorias,
     BonoNocturno,
     CierrePeriodo,
     Empresa,
+    ExportPlanilla,
     Trabajador,
     Usuario,
 )
@@ -37,27 +36,50 @@ from ..models import (
 router = APIRouter(prefix="/reportes", tags=["reportes"])
 
 PERIODO = r"^\d{4}-(0[1-9]|1[0-2])$"
-LAYOUT_VERSION = "PC-ASIS-1.1"  # 1.1: columna `monto` (S/) en B3AM
+from ..export_pc import LAYOUT_VERSION  # noqa: E402,F401  PC-ASIS-1.2 (contrato: docs/contratos/PC-ASIS-1.2.md)
+
 # Catálogo de conceptos de la interfaz con Planilla Core (ver docs/interfaz-planilla-core.md).
 CONCEPTOS = {
     "HN": ("Horas normales trabajadas", "HORAS", "INFORMATIVO"),
     "TAR": ("Tardanza", "MINUTOS", "DESCUENTO"),
     "HE25": ("Horas extra 25%", "HORAS", "REMUNERATIVO"),
     "HE35": ("Horas extra 35%", "HORAS", "REMUNERATIVO"),
-    "HNOC": ("Horas nocturnas 22:00-06:00", "HORAS", "INFORMATIVO"),
+    "HNOC": ("Horas nocturnas {ventana}", "HORAS", "INFORMATIVO"),
     "RNOC": ("Recargo nocturno (sólo empresas con sobretasa separada)", "HORAS", "REMUNERATIVO"),
     "B3AM": ("Bono nocturno 3 AM (cantidad de cierres; monto S/ aprobado por administración)", "CANTIDAD",
              "INGRESO_INTERNO"),
+    "BHCRE": ("Banco de horas: creditos del mes", "HORAS", "INFORMATIVO"),
+    "BHDEB": ("Banco de horas: debitos del mes (descansos, expiraciones)", "HORAS", "INFORMATIVO"),
     "BHSAL": ("Saldo banco de horas al cierre del mes", "HORAS", "INFORMATIVO"),
 }
 COLUMNAS = [
     ("codigo", "Código"), ("trabajador", "Trabajador"), ("empresa", "Empresa"), ("horas_trabajadas", "Horas trabajadas"),
     ("horas_normales", "Horas normales"), ("tardanza_min", "Tardanza (min)"), ("horas_extra_25", "HE 25%"),
-    ("horas_extra_35", "HE 35%"), ("horas_nocturnas", "Horas nocturnas 22-06"),
+    ("horas_extra_35", "HE 35%"), ("horas_nocturnas", "Horas nocturnas {ventana}"),
     ("recargo_nocturno_horas", "Recargo nocturno (h)"), ("bono_3am", "Bono 3 AM (cant.)"),
     ("bono_3am_monto", "Bono 3 AM (S/)"),
     ("banco_horas_mes", "Banco horas mov. mes"), ("banco_horas_saldo", "Banco horas saldo"), ("ausencias", "Ausencias"),
 ]
+
+
+def ventana_nocturna(db: Session, empresa_id: Optional[int], dia: date) -> str:
+    """Ventana nocturna configurada (rule_set nocturno.inicio/fin), p. ej. '22:00-06:00'. Sin empresa: la base."""
+    if empresa_id:
+        from .bandeja import _reglas
+        n = _reglas(db, empresa_id, dia)["nocturno"]
+    else:
+        from ..rules import BASE
+        n = BASE["nocturno"]
+    return f"{str(n['inicio'])[:5]}-{str(n['fin'])[:5]}"
+
+
+def conceptos(db: Session, empresa_id: int, dia: date) -> dict:
+    v = ventana_nocturna(db, empresa_id, dia)
+    return {k: {"descripcion": d.format(ventana=v), "unidad": u, "tipo": t} for k, (d, u, t) in CONCEPTOS.items()}
+
+
+def columnas(ventana: str) -> list[tuple[str, str]]:
+    return [(k, h.format(ventana=ventana)) for k, h in COLUMNAS]
 
 
 def rango(periodo: str) -> tuple[date, date]:
@@ -155,12 +177,15 @@ def _consolidado_mensual_data(db: Session, periodo: str, empresa_id: Optional[in
     ).order_by(BancoHorasCompensatorias.fecha_movimiento, BancoHorasCompensatorias.id):
         saldo[m.trabajador_id] = float(m.saldo_nuevo)
     mov = defaultdict(float)
+    cre = defaultdict(float)
+    deb = defaultdict(float)
     for tid, tipo, h in db.query(BancoHorasCompensatorias.trabajador_id, BancoHorasCompensatorias.tipo,
                                  func.sum(BancoHorasCompensatorias.horas)).filter(
             BancoHorasCompensatorias.trabajador_id.in_(tids), BancoHorasCompensatorias.fecha_movimiento >= desde,
             BancoHorasCompensatorias.fecha_movimiento <= hasta).group_by(
             BancoHorasCompensatorias.trabajador_id, BancoHorasCompensatorias.tipo):
         mov[tid] += float(h or 0) * (1 if tipo == "credito" else -1)
+        (cre if tipo == "credito" else deb)[tid] += float(h or 0)
     out = []
     for tid, r in data.items():
         he = r["horas_extra_25"] + r["horas_extra_35"]
@@ -173,30 +198,34 @@ def _consolidado_mensual_data(db: Session, periodo: str, empresa_id: Optional[in
         r["bono_3am_monto"] = _r2(monto)
         r["banco_horas_mes"] = _r2(mov.get(tid, 0))
         r["banco_horas_saldo"] = _r2(saldo.get(tid, 0))
+        r["banco_horas_creditos"] = _r2(cre.get(tid, 0))
+        r["banco_horas_debitos"] = _r2(deb.get(tid, 0))
         out.append(r)
     return sorted(out, key=lambda x: x["codigo"])
 
 
-def _tabla_csv(registros: list[dict]) -> str:
+def _tabla_csv(registros: list[dict], ventana: str = "22:00-06:00") -> str:
     buf = StringIO()
     w = csv.writer(buf, lineterminator="\n")
-    w.writerow([h for _, h in COLUMNAS])
+    cols = columnas(ventana)
+    w.writerow([h for _, h in cols])
     for r in registros:
-        w.writerow(["" if r.get(k) is None else r.get(k) for k, _ in COLUMNAS])
+        w.writerow(["" if r.get(k) is None else r.get(k) for k, _ in cols])
     return buf.getvalue()
 
 
-def _tabla_xlsx(registros: list[dict], titulo: str) -> bytes:
+def _tabla_xlsx(registros: list[dict], titulo: str, ventana: str = "22:00-06:00") -> bytes:
     from openpyxl import Workbook
     from openpyxl.styles import Font
     wb = Workbook()
     ws = wb.active
     ws.title = titulo[:31]
-    ws.append([h for _, h in COLUMNAS])
+    cols = columnas(ventana)
+    ws.append([h for _, h in cols])
     for c in ws[1]:
         c.font = Font(bold=True)
     for r in registros:
-        ws.append([r.get(k) for k, _ in COLUMNAS])
+        ws.append([r.get(k) for k, _ in cols])
     out = BytesIO()
     wb.save(out)
     return out.getvalue()
@@ -223,20 +252,21 @@ def consolidado_mensual(
             f"total_{k}": _r2(sum(r[k] for r in registros)) for k in claves}
         totales["total_recargo_nocturno_horas"] = _r2(sum(r["recargo_nocturno_horas"] or 0 for r in registros))
         desde, hasta = rango(periodo)
-        extra = {}
+        extra = {"ventana_nocturna": ventana_nocturna(db, empresa_id, hasta)}
         if empresa_id:
-            extra = {"empresa_id": empresa_id, "periodo_cerrado": periodo_cerrado(db, empresa_id, periodo),
+            extra |= {"empresa_id": empresa_id, "periodo_cerrado": periodo_cerrado(db, empresa_id, periodo),
                      "muestra_recargo_nocturno": recargo_separado(db, empresa_id, desde)}
         return {"periodo": periodo, "desde": desde.isoformat(), "hasta": hasta.isoformat(), **extra,
                 "registros": registros, "totales": totales}
+    ventana = ventana_nocturna(db, empresa_id, rango(periodo)[1])
     nombre = f"consolidado_{periodo}" + (f"_emp{empresa_id}" if empresa_id else "")
     audit(db, user.id, "descargar", "reporte_consolidado", periodo,
           despues={"empresa_id": empresa_id, "unidad_id": unidad_id, "formato": formato, "registros": len(registros)})
     db.commit()
     if formato == "csv":
-        return Response(content="\ufeff" + _tabla_csv(registros), media_type="text/csv; charset=utf-8",
+        return Response(content="\ufeff" + _tabla_csv(registros, ventana), media_type="text/csv; charset=utf-8",
                         headers={"Content-Disposition": f"attachment; filename={nombre}.csv"})
-    return Response(content=_tabla_xlsx(registros, f"Consolidado {periodo}"),
+    return Response(content=_tabla_xlsx(registros, f"Consolidado {periodo}", ventana),
                     media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     headers={"Content-Disposition": f"attachment; filename={nombre}.xlsx"})
 
@@ -273,7 +303,8 @@ def _lineas(registros: list[dict]) -> list[dict]:
                    ("HE35", r["horas_extra_35"]), ("HNOC", r["horas_nocturnas"])]
         if r["recargo_nocturno_horas"] is not None:
             valores.append(("RNOC", r["recargo_nocturno_horas"]))
-        valores += [("B3AM", r["bono_3am"]), ("BHSAL", r["banco_horas_saldo"])]
+        valores += [("B3AM", r["bono_3am"]), ("BHCRE", r["banco_horas_creditos"]),
+                    ("BHDEB", r["banco_horas_debitos"]), ("BHSAL", r["banco_horas_saldo"])]
         for cod, cant in valores:
             monto = r["bono_3am_monto"] if cod == "B3AM" else None
             if not cant and not monto:
@@ -285,6 +316,26 @@ def _lineas(registros: list[dict]) -> list[dict]:
     return lineas
 
 
+def _empresa_gestion(db: Session, user: Usuario, empresa_id: int) -> Empresa:
+    if user.rol not in ("rrhh", "admin"):
+        raise HTTPException(403, "No autorizado")
+    empresa_alcance(user, empresa_id)
+    empresa = db.get(Empresa, empresa_id)
+    if not empresa:
+        raise HTTPException(404, "Empresa no encontrada")
+    return empresa
+
+
+def _descarga(row: ExportPlanilla, reutilizada: bool = False) -> Response:
+    headers = {"Content-Disposition": f"attachment; filename={row.archivo}", "X-Export-Estado": row.estado,
+               "X-Export-Version": str(row.version), "X-Export-Checksum": row.checksum,
+               "X-Export-Reutilizada": "1" if reutilizada else "0",
+               "Access-Control-Expose-Headers":
+                   "Content-Disposition, X-Export-Estado, X-Export-Version, X-Export-Checksum, X-Export-Reutilizada"}
+    media = "application/json" if row.formato == "json" else "text/csv; charset=utf-8"
+    return Response(content=row.contenido, media_type=media, headers=headers)
+
+
 @router.post("/export-planilla-core")
 def export_planilla_core(
     periodo: str = Query(..., pattern=PERIODO),
@@ -294,47 +345,78 @@ def export_planilla_core(
     db: Session = Depends(get_db),
     user: Usuario = Depends(current_user),
 ):
-    """Archivo de interfaz versionado para Planilla Core (layout `PC-ASIS-1.1`, docs/interfaz-planilla-core.md).
+    """Archivo de interfaz para Planilla Core (contrato `PC-ASIS-1.2`, docs/contratos/PC-ASIS-1.2.md).
 
-    Periodo cerrado -> estado FINAL. Abierto -> se exporta marcado PRELIMINAR (o 409 si `solo_cerrado=true`).
-    Cada exportación queda en auditoría y numera su versión (v1, v2...) por empresa+periodo.
+    Periodo cerrado -> FINAL; abierto -> PRELIMINAR (o 409 con `solo_cerrado=true`). Versionado con historial:
+    si el contenido (checksum sha256) no cambio, devuelve la misma version (idempotente); si cambio, crea v+1.
     """
+    empresa = _empresa_gestion(db, user, empresa_id)
+    if solo_cerrado and not periodo_cerrado(db, empresa_id, periodo):
+        raise HTTPException(409, "El periodo no esta cerrado; cierre el periodo o exporte como preliminar")
+    from ..export_pc import generar_export
+    row, reutilizada = generar_export(db, empresa, periodo, formato, user.id)
+    return _descarga(row, reutilizada)
+
+
+@router.get("/export-planilla-core/versiones")
+def export_versiones(
+    empresa_id: int = Query(...),
+    periodo: Optional[str] = Query(None, pattern=PERIODO),
+    db: Session = Depends(get_db),
+    user: Usuario = Depends(current_user),
+):
+    """Historial de versiones exportadas (sin contenido), mas reciente primero."""
+    from ..export_pc import out
+    _empresa_gestion(db, user, empresa_id)
+    q = db.query(ExportPlanilla).filter(ExportPlanilla.empresa_id == empresa_id)
+    if periodo:
+        q = q.filter(ExportPlanilla.periodo == periodo)
+    return [out(e) for e in q.order_by(ExportPlanilla.periodo.desc(), ExportPlanilla.version.desc(),
+                                        ExportPlanilla.id.desc()).all()]
+
+
+@router.get("/export-planilla-core/versiones/{export_id}")
+def export_descargar_version(export_id: int, db: Session = Depends(get_db), user: Usuario = Depends(current_user)):
+    """Descarga exacta (byte a byte) de una version ya generada."""
+    row = db.get(ExportPlanilla, export_id)
+    if not row:
+        raise HTTPException(404, "Exportacion no encontrada")
+    _empresa_gestion(db, user, row.empresa_id)
+    audit(db, user.id, "descargar", "export_planilla", row.id, despues={"archivo": row.archivo})
+    db.commit()
+    return _descarga(row)
+
+
+@router.get("/export-planilla-core/contrato")
+def export_contrato(user: Usuario = Depends(current_user)):
+    """JSON Schema del contrato PC-ASIS-1.2."""
+    from ..export_pc import json_schema
+    return json_schema()
+
+
+@router.post("/export-planilla-core/lote")
+def export_lote(
+    periodo: str = Query(..., pattern=PERIODO),
+    formato: Literal["csv", "json"] = "csv",
+    empresa_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+    user: Usuario = Depends(current_user),
+):
+    """Exporta todas las empresas del alcance del usuario (o una) como trabajo; devuelve el trabajo para seguir
+    su progreso en GET /trabajos/{id}. Pocos trabajadores -> se ejecuta en la peticion."""
+    from .. import trabajos
+    from ..config import settings
     if user.rol not in ("rrhh", "admin"):
         raise HTTPException(403, "No autorizado")
-    empresa_alcance(user, empresa_id)
-    empresa = db.get(Empresa, empresa_id)
-    if not empresa:
-        raise HTTPException(404, "Empresa no encontrada")
-    cerrado = periodo_cerrado(db, empresa_id, periodo)
-    if solo_cerrado and not cerrado:
-        raise HTTPException(409, "El periodo no está cerrado; cierre el periodo o exporte como preliminar")
-    estado = "FINAL" if cerrado else "PRELIMINAR"
-    clave = f"{empresa.codigo}:{periodo}"
-    version = (db.scalar(select(func.count(Auditoria.id)).where(
-        Auditoria.entidad == "export_planilla_core", Auditoria.entidad_id == clave)) or 0) + 1
-    registros = _consolidado_mensual_data(db, periodo, empresa_id, None, None)
-    lineas = _lineas(registros)
-    generado = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    archivo = f"PC_{empresa.codigo}_{periodo.replace('-', '')}_v{version}_{estado}.{formato}"
-    meta = {"layout_version": LAYOUT_VERSION, "empresa_codigo": empresa.codigo, "empresa_ruc": empresa.ruc,
-            "periodo": periodo, "estado": estado, "version_archivo": version, "generado_en": generado}
-    audit(db, user.id, "exportar", "export_planilla_core", clave,
-          despues=meta | {"archivo": archivo, "trabajadores": len(registros), "lineas": len(lineas)})
-    db.commit()
-    headers = {"Content-Disposition": f"attachment; filename={archivo}", "X-Export-Estado": estado,
-               "X-Export-Version": str(version), "Access-Control-Expose-Headers": "Content-Disposition, X-Export-Estado"}
-    if formato == "json":
-        cuerpo = meta | {"conceptos": {k: {"descripcion": d, "unidad": u, "tipo": t} for k, (d, u, t) in CONCEPTOS.items()},
-                         "lineas": lineas}
-        return Response(content=json.dumps(cuerpo, ensure_ascii=False, indent=2), media_type="application/json",
-                        headers=headers)
-    buf = StringIO()
-    w = csv.writer(buf, delimiter=";", lineterminator="\n")
-    w.writerow(["layout_version", "empresa_codigo", "empresa_ruc", "periodo", "estado", "version_archivo",
-                "trabajador_codigo", "doc_tipo", "doc_numero", "concepto_codigo", "concepto_tipo", "unidad", "cantidad",
-                "monto"])
-    for li in lineas:
-        w.writerow([LAYOUT_VERSION, empresa.codigo, empresa.ruc, periodo, estado, version, li["trabajador_codigo"],
-                    li["doc_tipo"], li["doc_numero"], li["concepto_codigo"], li["concepto_tipo"], li["unidad"],
-                    li["cantidad"], "" if li["monto"] is None else f"{li['monto']:.2f}"])
-    return Response(content=buf.getvalue(), media_type="text/csv; charset=utf-8", headers=headers)
+    eid = empresa_alcance(user, empresa_id)
+    empresas = [eid] if eid else [e.id for e in db.query(Empresa).order_by(Empresa.id)]
+    n = db.query(Trabajador).filter(Trabajador.empresa_id.in_(empresas)).count()
+    t = trabajos.crear(db, "export_lote", {"periodo": periodo, "formato": formato, "empresas": empresas}, user.id,
+                       eid, total=len(empresas))
+    if n <= settings.jobs_umbral_sync:
+        trabajos.ejecutar(t.id)
+        modo = "sync"
+    else:
+        modo = trabajos.encolar(t.id)
+    db.expire_all()
+    return trabajos.out(db.get(type(t), t.id)) | {"modo": modo}
