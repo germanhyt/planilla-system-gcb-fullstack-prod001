@@ -1,0 +1,4 @@
+# Dev local: docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+services:
+  api: {ports: ["8000:8000"], environment: {AUTO_SEED: "1"}}  # dev: semilla ficticia automática si la BD está vacía
+  web: {ports: ["8080:80"]}

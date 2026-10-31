@@ -1,0 +1,28 @@
+# Base (dev/prod): red bridge, SIN puertos publicados. En prod: unir 'api' y 'web' a la red de nginx_proxy
+# y definir WEB_HOST / API_HOST (VIRTUAL_HOST, LETSENCRYPT_HOST). Ver docker-compose.prod.yml.
+services:
+  db:
+    image: postgres:16-alpine
+    environment: {POSTGRES_USER: planilla, POSTGRES_PASSWORD: "${DB_PASSWORD:-planilla}", POSTGRES_DB: planilla, TZ: America/Lima, PGTZ: America/Lima}
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck: {test: ["CMD-SHELL", "pg_isready -U planilla"], interval: 3s, retries: 30}
+  redis:
+    image: redis:7-alpine
+  api:
+    build: {context: ./backend, args: {DEV: "${DEV:-1}"}}
+    environment: &env
+      DATABASE_URL: postgresql+psycopg://planilla:${DB_PASSWORD:-planilla}@db:5432/planilla
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET: ${JWT_SECRET:-cambiar-en-produccion}
+      SEED_PASSWORD: ${SEED_PASSWORD:-Cambiar123!}
+      TZ: America/Lima
+    depends_on: {db: {condition: service_healthy}, redis: {condition: service_started}}
+  worker:
+    build: {context: ./backend, args: {DEV: "${DEV:-1}"}}
+    command: python worker.py
+    environment: *env
+    depends_on: [api]
+  web:
+    build: ./frontend
+    depends_on: [api]
+volumes: {pgdata: {}}

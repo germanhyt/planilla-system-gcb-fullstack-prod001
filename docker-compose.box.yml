@@ -1,0 +1,11 @@
+# Solo para este box (dockerd sin iptables/bridge) => red host. Puertos alternos para no chocar con spike-tareo:
+# db 5433, redis 6380, api 8001, web 8081.
+x-env: &env
+  DATABASE_URL: "postgresql+psycopg://planilla:planilla@127.0.0.1:5433/planilla"
+  REDIS_URL: "redis://127.0.0.1:6380/0"
+services:
+  db: {network_mode: host, command: ["postgres", "-p", "5433"], healthcheck: {test: ["CMD-SHELL", "pg_isready -U planilla -p 5433"]}}
+  redis: {network_mode: host, command: ["redis-server", "--port", "6380"]}
+  api: {network_mode: host, build: {network: host}, environment: {<<: *env, PORT: "8001", AUTO_SEED: "1"}}
+  worker: {network_mode: host, build: {network: host}, environment: *env}
+  web: {network_mode: host, build: {network: host}, environment: {LISTEN_PORT: "8081", API_UPSTREAM: "127.0.0.1:8001"}}
