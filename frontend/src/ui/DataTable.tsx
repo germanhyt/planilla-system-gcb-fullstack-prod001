@@ -27,6 +27,8 @@ type Props<T> = {
   /** Paginación server-side: `url` del listado y filtros extra (vacíos se omiten); `clave` prefija el estado en la URL; cambiar `recarga` vuelve a pedir. */
   servidor?: { url: string; params?: Record<string, string | number | boolean | null | undefined>; clave?: string; recarga?: number }
   tamanos?: number[]
+  /** Agrega una columna N° con la numeración global (continúa entre páginas). */
+  numerar?: boolean
 }
 export type Pagina<T> = { items: T[]; total: number; page: number; page_size: number }
 
@@ -50,12 +52,14 @@ export function paginas(actual: number, total: number): (number | '…')[] {
   xs.forEach((n, i) => { if (i && n - xs[i - 1] > 1) out.push('…'); out.push(n) })
   return out
 }
+/** Número global de una fila (1-based) según página y tamaño. */
+export const numeroFila = (pageIndex: number, pageSize: number, i: number) => pageIndex * pageSize + i + 1
 export function rango(page: number, size: number, total: number) {
   return total === 0 ? 'Sin resultados' : `Mostrando ${(page - 1) * size + 1} a ${Math.min(total, page * size)} de ${total}`
 }
 
 export function DataTable<T>({ data, columns, buscar = 'Buscar…', chips, acciones, titulo, cargando, error, reintentar, vacio, tam = 10,
-  ordenInicial = [], filaClase, testid, compacta, servidor, tamanos = [10, 20, 50, 100] }: Props<T>) {
+  ordenInicial = [], filaClase, testid, compacta, servidor, tamanos = [10, 20, 50, 100], numerar }: Props<T>) {
   const k = servidor?.clave ?? testid ?? 't'
   const enUrl = !!servidor
   const [sorting, setSorting] = useState<SortingState>(() => {
@@ -84,7 +88,9 @@ export function DataTable<T>({ data, columns, buscar = 'Buscar…', chips, accio
   useEffect(() => { if (enUrl) escribirURL({ [`${k}.page`]: pag.pageIndex ? pag.pageIndex + 1 : null, [`${k}.size`]: pag.pageSize !== tam ? pag.pageSize : null, [`${k}.sort`]: sort || null, [`${k}.q`]: qd || null }) },
     [pag, sort, qd])
   const filas = servidor ? res?.items ?? [] : data
-  const cols = useMemo(() => columns, [columns])
+  const cols = useMemo<ColumnDef<T, any>[]>(() => numerar ? [{ id: '_n', header: 'N°', enableSorting: false,
+    cell: x => { const st = x.table.getState().pagination; const i = x.table.getRowModel().rows.findIndex(r => r.id === x.row.id)
+      return <span className="tabular-nums text-muted">{numeroFila(st.pageIndex, st.pageSize, i)}</span> } }, ...columns] : columns, [columns, numerar])
   const t = useReactTable({ data: filas, columns: cols, state: { sorting, globalFilter: servidor ? undefined : q, pagination: pag },
     onSortingChange: u => { setSorting(u); if (servidor) setPag(x => ({ ...x, pageIndex: 0 })) }, onGlobalFilterChange: setQ, onPaginationChange: setPag,
     manualPagination: !!servidor, manualSorting: !!servidor, manualFiltering: !!servidor, rowCount: servidor ? res?.total ?? 0 : undefined,

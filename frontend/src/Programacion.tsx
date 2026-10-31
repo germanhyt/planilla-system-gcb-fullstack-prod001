@@ -8,7 +8,7 @@ import { Button, Card, Field, PageHeader, Pantalla, Toolbar } from './ui'
 import { DataTable, type ColumnDef } from './ui/DataTable'
 import { confirmar, fallo, ok } from './ui/feedback'
 import { filtrarPorEmpresa, useEmpresaFiltro } from './ui/empresaFiltro'
-import { hoyLima as hoy, nombreTrab, useCarga } from './ui/hooks'
+import { hoyLima as hoy, nombreTrab } from './ui/hooks'
 
 const sumarDias = (d: string, n: number) => { const x = new Date(d + 'T12:00:00'); x.setDate(x.getDate() + n); return x.toISOString().slice(0, 10) }
 const esquema = yup.object({
@@ -26,25 +26,23 @@ export function HEProgramadas({ rol }: { rol: string }) {
   const [desde, setDesde] = useState(hoy()); const [hasta, setHasta] = useState(sumarDias(hoy(), 13))
   const [trabs, setTrabs] = useState<any[]>([])
   const gestor = rol !== 'trabajador'
-  const c = useCarga(() => api<any[]>(`/he-programadas?desde=${desde}&hasta=${hasta}`), [desde, hasta])
-  useEffect(() => { c.run() }, [desde, hasta])
+  const [recarga, setRecarga] = useState(0); const recargar = () => setRecarga(n => n + 1)
   useEffect(() => { if (gestor) api('/trabajadores').then(setTrabs).catch(() => {}) }, [])
   const { register, handleSubmit, formState: { errors, isSubmitting }, reset } = useForm({ resolver: yupResolver(esquema), defaultValues: { trabajador_id: '', dia: hoy(), horas: 2, motivo: '' } })
   const guardar = async (f: Form) => {
     try {
       await api('/he-programadas', { method: 'POST', body: { trabajador_id: Number(f.trabajador_id), dia: f.dia, horas: Number(f.horas), motivo: f.motivo || null } })
-      ok('Horas extra programadas.'); reset({ ...f, motivo: '' }); c.run()
+      ok('Horas extra programadas.'); reset({ ...f, motivo: '' }); recargar()
     } catch (e) { fallo(e) }
   }
   const anular = async (id: number) => {
     if (!await confirmar({ titulo: '¿Anular esta programación?', mensaje: 'Las horas dejarán de pagarse automáticamente.', peligro: true, ok: 'Anular' })) return
-    try { await api(`/he-programadas/${id}`, { method: 'DELETE' }); ok('Programación anulada.'); c.run() } catch (e) { fallo(e) }
+    try { await api(`/he-programadas/${id}`, { method: 'DELETE' }); ok('Programación anulada.'); recargar() } catch (e) { fallo(e) }
   }
   const trabsVis = filtrarPorEmpresa(trabs, empresa, t => t.empresa_id)
-  const lista = filtrarPorEmpresa(c.datos ?? [], empresa, h => h.trabajador?.empresa_id)
   const cols = useMemo<ColumnDef<any, any>[]>(() => [
     { accessorKey: 'dia', header: 'Día' },
-    { id: 't', accessorFn: h => nombreTrab(h.trabajador), header: 'Trabajador' },
+    { id: 'trabajador', accessorFn: h => nombreTrab(h.trabajador), header: 'Trabajador' },
     { accessorKey: 'horas', header: 'Horas', cell: x => <b className="font-semibold">{x.getValue()} h</b> },
     { accessorKey: 'motivo', header: 'Motivo', cell: x => x.getValue() || <span className="text-muted">—</span> },
     ...(gestor ? [{ id: 'acc', header: '', enableSorting: false, cell: (x: any) => <Button size="sm" variant="danger" icon={Trash2} onClick={() => anular(x.row.original.id)}>Anular</Button> }] : []),
@@ -60,7 +58,8 @@ export function HEProgramadas({ rol }: { rol: string }) {
       <Field label="Motivo"><input className="ds-input" {...register('motivo')} /></Field>
       <Button type="submit" variant="primary" icon={CalendarPlus} disabled={isSubmitting}>Programar</Button>
     </form></Card>}
-    <DataTable data={lista} columns={cols} cargando={c.cargando} error={c.err} reintentar={c.run} vacio="No hay horas extra programadas en el rango."
+    <DataTable data={[]} columns={cols} numerar servidor={{ url: '/he-programadas', clave: 'he', recarga, params: { desde, hasta, empresa_id: empresa } }}
+      buscar="Buscar trabajador o motivo" vacio="No hay horas extra programadas en el rango."
       titulo={<Toolbar>
         <Field label="Desde"><input type="date" className="ds-input" value={desde} onChange={e => setDesde(e.target.value)} /></Field>
         <Field label="Hasta"><input type="date" className="ds-input" value={hasta} onChange={e => setHasta(e.target.value)} /></Field></Toolbar>} />
