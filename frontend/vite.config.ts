@@ -16,12 +16,10 @@ export default defineConfig({
   build: { rollupOptions: { output: { manualChunks(id) {
     if (!id.includes('node_modules')) return
     if (/[\\/](chart\.js|react-chartjs-2|@kurkle)[\\/]/.test(id)) return 'charts'
-    if (/[\\/](react|react-dom|scheduler)[\\/]/.test(id)) return 'react'
     if (/[\\/]@tanstack[\\/]/.test(id)) return 'tanstack'
     if (/[\\/](react-hook-form|@hookform|yup|property-expr|tiny-case|toposort)[\\/]/.test(id)) return 'forms'
     if (/[\\/]lucide-react[\\/]/.test(id)) return 'icons'
     if (/[\\/]react-toastify[\\/]/.test(id)) return 'toast'
-    return 'vendor'
   } } } },
   test: { environment: 'node', include: ['src/**/*.test.ts'] },
   server: { proxy: { '/api': { target: 'http://localhost:8000', rewrite: p => p.replace(/^\/api/, '') } } },
