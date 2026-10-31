@@ -37,11 +37,25 @@ describe('theme toggle', () => {
     expect(css).toContain(`:root,[data-theme="dark"]{--c-bg:${tokens.dark.bg}`)
     expect(css).toContain(`[data-theme="light"]{--c-bg:${tokens.light.bg}`)
   })
+  it('acento morado reemplaza al azul en ambos temas', () => {
+    for (const t of ['dark', 'light'] as const) {
+      expect(tokens[t]).not.toHaveProperty('blue')
+      const n = parseInt(tokens[t].accent.slice(1), 16), r = n >> 16, g = (n >> 8) & 255, b = n & 255
+      expect(b).toBeGreaterThan(g); expect(r).toBeGreaterThan(g)
+    }
+  })
   it.each(['dark', 'light'] as const)('contraste accesible WCAG AA en %s', t => {
     const k = tokens[t]
     expect(contrast(k.text, k.bg)).toBeGreaterThanOrEqual(7)
     expect(contrast(k.muted, k.surface)).toBeGreaterThanOrEqual(4.5)
-    expect(contrast(k['primary-fg'], k.primary)).toBeGreaterThanOrEqual(7)
+    expect(contrast(k['primary-fg'], k.primary)).toBeGreaterThanOrEqual(4.5)
+    expect(contrast(k.accent, k.surface)).toBeGreaterThanOrEqual(4.5)
+    expect(contrast(k.text, k['accent-soft'])).toBeGreaterThanOrEqual(4.5)
+    // sidebar berenjena: texto blanco y secundario legibles, item activo morado claro con texto blanco
+    expect(contrast(k['sidebar-fg'], k.sidebar)).toBeGreaterThanOrEqual(7)
+    expect(contrast(k['sidebar-fg'], k['sidebar-2'])).toBeGreaterThanOrEqual(7)
+    expect(contrast(k['sidebar-muted'], k.sidebar)).toBeGreaterThanOrEqual(4.5)
+    expect(contrast(k['sidebar-fg'], k['sidebar-active'])).toBeGreaterThanOrEqual(4.5)
     for (const s of ['success', 'warning', 'danger'] as const) expect(contrast(k[s], k[`${s}-bg`])).toBeGreaterThanOrEqual(4.5)
     for (const s of ['success', 'danger'] as const) expect(contrast(k[s], k.surface)).toBeGreaterThanOrEqual(4.5)
   })

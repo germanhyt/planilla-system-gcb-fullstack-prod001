@@ -7,7 +7,7 @@ export default defineConfig({
   plugins: [react(), tailwindcss(), VitePWA({ registerType: 'autoUpdate',
     // shell offline: precache de index.html/JS/CSS; navegaciones sin red sirven index.html (nunca /api)
     workbox: { navigateFallback: '/index.html', navigateFallbackDenylist: [/^\/api\//], globPatterns: ['**/*.{js,css,html,svg,png,ico,webmanifest,woff2}'] },
-    manifest: { name: 'Planillas GCB', short_name: 'Planillas', start_url: '/', display: 'standalone', theme_color: '#0b1220', background_color: '#0b1220',
+    manifest: { name: 'Planillas GCB', short_name: 'Planillas', start_url: '/', display: 'standalone', theme_color: '#1e0a2e', background_color: '#1e0a2e',
       icons: [
         { src: '/brand/pwa-192.png', sizes: '192x192', type: 'image/png' },
         { src: '/brand/pwa-512.png', sizes: '512x512', type: 'image/png' },

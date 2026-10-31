@@ -1,24 +1,26 @@
-// Design tokens (fuente única). Estilo "HR Payroll Dashboard": SaaS limpio, acentos azul/ámbar/teal.
+// Design tokens (fuente única). Estilo "Nex HR dashboard": sidebar berenjena, acento morado profundo; estados ámbar/verde/rojo.
 export type Theme = 'dark' | 'light'
 export type Tokens = Record<string, string>
 
 export const tokens: Record<Theme, Tokens> = {
   dark: {
-    bg: '#0b1220', surface: '#111a2e', 'surface-2': '#17223a', border: '#24314d',
-    text: '#e6ebf5', muted: '#9aa8c2',
-    primary: '#f1f5f9', 'primary-fg': '#0b1220',
-    'pill-active': '#1e2a44',
-    blue: '#60a5fa', amber: '#fbbf24', teal: '#2dd4bf',
+    bg: '#0e0a14', surface: '#160f20', 'surface-2': '#1e1529', border: '#2e2240',
+    text: '#efeaf6', muted: '#a89bbd',
+    primary: '#7c3aed', 'primary-fg': '#ffffff',
+    'pill-active': '#2a1b3d',
+    accent: '#a78bfa', 'accent-strong': '#8b5cf6', 'accent-soft': '#2a1b3d', amber: '#fbbf24', teal: '#2dd4bf',
+    sidebar: '#1e0a2e', 'sidebar-2': '#2a0a3d', 'sidebar-fg': '#ffffff', 'sidebar-muted': '#c4b2d9', 'sidebar-active': '#4a1d6e',
     success: '#4ade80', 'success-bg': '#0f2e22',
     warning: '#fbbf24', 'warning-bg': '#33270b',
     danger: '#f87171', 'danger-bg': '#3a1515',
   },
   light: {
-    bg: '#f5f6f8', surface: '#ffffff', 'surface-2': '#f1f3f6', border: '#e4e7ec',
-    text: '#111827', muted: '#5b6474',
-    primary: '#111827', 'primary-fg': '#ffffff',
-    'pill-active': '#ffffff',
-    blue: '#2563eb', amber: '#b45309', teal: '#0f766e',
+    bg: '#f6f4f9', surface: '#ffffff', 'surface-2': '#f3eff8', border: '#e6e0ee',
+    text: '#1a1025', muted: '#5f5470',
+    primary: '#2d0b45', 'primary-fg': '#ffffff',
+    'pill-active': '#ede5f7',
+    accent: '#6d28d9', 'accent-strong': '#6d28d9', 'accent-soft': '#ede5f7', amber: '#b45309', teal: '#0f766e',
+    sidebar: '#2a0a3d', 'sidebar-2': '#1e0a2e', 'sidebar-fg': '#ffffff', 'sidebar-muted': '#cbbbe0', 'sidebar-active': '#5b2a86',
     success: '#047857', 'success-bg': '#d1fae5',
     warning: '#92400e', 'warning-bg': '#fef3c7',
     danger: '#b91c1c', 'danger-bg': '#fee2e2',

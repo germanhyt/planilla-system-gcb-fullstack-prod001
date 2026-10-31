@@ -55,7 +55,7 @@ function Charts({ theme }: { theme: Theme }) {
     <Card className="md:col-span-2"><h3 className="m-0 mb-2 text-sm font-semibold">Costo de planilla</h3>
       <div className="h-56"><Line options={{ maintainAspectRatio: false, plugins: { legend: { labels: { color: k.muted } } }, scales: { x: { grid, ticks }, y: { grid, ticks } } }}
         data={{ labels: ['May', 'Jun', 'Jul', 'Ago', 'Set', 'Oct'], datasets: [
-          { label: 'Neto', data: [182, 190, 188, 201, 210, 219], borderColor: k.blue, backgroundColor: k.blue + '33', fill: true, tension: 0.35 },
+          { label: 'Neto', data: [182, 190, 188, 201, 210, 219], borderColor: k.accent, backgroundColor: k.accent + '33', fill: true, tension: 0.35 },
           { label: 'Horas extra', data: [22, 25, 19, 28, 26, 31], borderColor: k.amber, tension: 0.35 }] }} /></div></Card>
     <Card><h3 className="m-0 mb-2 text-sm font-semibold">Estado de pagos</h3>
       <div className="h-56"><Doughnut options={{ maintainAspectRatio: false, cutout: '70%', plugins: { legend: { position: 'bottom', labels: { color: k.muted } } } }}

@@ -9,12 +9,20 @@
   --color-surface: var(--c-surface);
   --color-surface-2: var(--c-surface-2);
   --color-line: var(--c-border);
+  --color-border: var(--c-border);
   --color-fg: var(--c-text);
   --color-muted: var(--c-muted);
   --color-primary: var(--c-primary);
   --color-primary-fg: var(--c-primary-fg);
   --color-pill-active: var(--c-pill-active);
-  --color-blue: var(--c-blue);
+  --color-accent: var(--c-accent);
+  --color-accent-strong: var(--c-accent-strong);
+  --color-accent-soft: var(--c-accent-soft);
+  --color-sidebar: var(--c-sidebar);
+  --color-sidebar-2: var(--c-sidebar-2);
+  --color-sidebar-fg: var(--c-sidebar-fg);
+  --color-sidebar-muted: var(--c-sidebar-muted);
+  --color-sidebar-active: var(--c-sidebar-active);
   --color-amber: var(--c-amber);
   --color-teal: var(--c-teal);
   --color-success: var(--c-success);
@@ -29,4 +37,4 @@
 }
 .ds { font-family: var(--font); color: var(--c-text); background: var(--c-bg); }
 .ds *, .ds *::before, .ds *::after { box-sizing: border-box; }
-.ds :focus-visible { outline: 2px solid var(--c-blue); outline-offset: 2px; }
+.ds :focus-visible { outline: 2px solid var(--c-accent); outline-offset: 2px; }
