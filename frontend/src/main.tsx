@@ -4,21 +4,26 @@ import { buildThemeCss } from './theme/tokens'
 import { applyTheme, getTheme } from './theme/theme'
 import { createRoot } from 'react-dom/client'
 import { api, getToken } from './api'
-import { Crud, Campo } from './Crud'
-import { Marcador } from './Marcador'
-import { MarcasEquipo, MisMarcas } from './Marcas'
-import { BolsaHoras, Excepciones } from './Excepciones'
-import { Reportes } from './Reportes'
-import { Bonos, Periodos } from './Cierre'
-import { HEProgramadas } from './Programacion'
-import { Horarios } from './Horarios'
-import { Justificaciones } from './Justificaciones'
-import { Configuracion } from './Configuracion'
-import { Usuarios } from './Usuarios'
+import type { Campo } from './Crud'
 import { Notificaciones, useConteoNotificaciones } from './Trabajos'
+// Code splitting por ruta: cada pantalla es un chunk que se carga al navegar.
+const Crud = lazy(() => import('./Crud').then(m => ({ default: m.Crud })))
+const Marcador = lazy(() => import('./Marcador').then(m => ({ default: m.Marcador })))
+const MarcasEquipo = lazy(() => import('./Marcas').then(m => ({ default: m.MarcasEquipo })))
+const MisMarcas = lazy(() => import('./Marcas').then(m => ({ default: m.MisMarcas })))
+const BolsaHoras = lazy(() => import('./Excepciones').then(m => ({ default: m.BolsaHoras })))
+const Excepciones = lazy(() => import('./Excepciones').then(m => ({ default: m.Excepciones })))
+const Reportes = lazy(() => import('./Reportes').then(m => ({ default: m.Reportes })))
+const Bonos = lazy(() => import('./Cierre').then(m => ({ default: m.Bonos })))
+const Periodos = lazy(() => import('./Cierre').then(m => ({ default: m.Periodos })))
+const HEProgramadas = lazy(() => import('./Programacion').then(m => ({ default: m.HEProgramadas })))
+const Horarios = lazy(() => import('./Horarios').then(m => ({ default: m.Horarios })))
+const Justificaciones = lazy(() => import('./Justificaciones').then(m => ({ default: m.Justificaciones })))
+const Configuracion = lazy(() => import('./Configuracion').then(m => ({ default: m.Configuracion })))
+const Usuarios = lazy(() => import('./Usuarios').then(m => ({ default: m.Usuarios })))
+const Dashboard = lazy(() => import('./Dashboard').then(m => ({ default: m.Dashboard })))
 import { Shell } from './shell/Shell'
 import { vistaInicial } from './shell/menuLib'
-import { Dashboard } from './Dashboard'
 import { useForm } from 'react-hook-form'
 import { yupResolver } from '@hookform/resolvers/yup'
 import * as yup from 'yup'
@@ -111,6 +116,7 @@ function App() {
   if (!getToken() || !me) return <Login onOk={cargar} />
   const r = me.rol; const v = vista || vistaInicial(r); const admin = r === 'admin'; const rrhh = r === 'rrhh' || admin
   return <Shell me={me} vista={v} setVista={setVista} noLeidas={noLeidas} onNotif={() => setTick(x => x + 1)}>
+    <Suspense fallback={<div className="p-6 text-muted" role="status">Cargando…</div>}>
       {v === 'dashboard' && <Dashboard rol={r} />}
       {v === 'perfil' && <Perfil me={me} recargar={cargar} />}
       {v === 'marcar' && <Marcador token={getToken()!} />}
@@ -133,6 +139,7 @@ function App() {
       {v === 'reglas' && <Reglas />}
       {v === 'usuarios' && <Usuarios />}
       {v === 'configuracion' && <Configuracion admin={admin} contrato={CONTRATO} />}
+    </Suspense>
   </Shell>
 }
 
