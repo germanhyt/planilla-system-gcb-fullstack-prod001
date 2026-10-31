@@ -50,31 +50,32 @@ export function Excepciones({ rol }: { rol: string }) {
   const [desde, setDesde] = useState(haceDias(30)); const [hasta, setHasta] = useState(hoyLima())
   const [tipo, setTipo] = useState(''); const [estado, setEstado] = useState<Estado>('pendiente'); const [unidad, setUnidad] = useState('')
   const [unidades, setUnidades] = useState<any[]>([])
-  const c = useCarga(() => api<Item[]>(`/excepciones/bandeja?${conEmpresa({ desde, hasta, tipo, estado, unidad_id: unidad }, empresa)}`), [desde, hasta, tipo, estado, unidad, empresa])
+  // S8 paso 7: paginada en la BD; los KPI vienen en `resumen` (mismos filtros, no sólo la página)
+  const [rango, setRango] = useState({ desde, hasta }); const [recarga, setRecarga] = useState(0)
+  const [resumen, setResumen] = useState<{ total: number; pendientes: number; fuera_geocerca: number } | null>(null)
+  const run = () => { setRango({ desde, hasta }); setRecarga(n => n + 1) }
   useEffect(() => { if (rol !== 'jefe') api('/unidades').then(setUnidades).catch(() => {}) }, [])
-  useEffect(() => { c.run() }, [tipo, estado, unidad, empresa])
-  const items = c.datos ?? []
-  const pendientes = items.filter(i => i.accionable).length
+  const params = { ...rango, tipo, estado, unidad_id: unidad, empresa_id: empresa }
   const cols = useMemo<ColumnDef<Item, any>[]>(() => [
     { accessorKey: 'dia', header: 'Día' },
-    { id: 't', accessorFn: it => `${it.trabajador.codigo} ${it.trabajador.nombre}`, header: 'Trabajador', cell: x => { const it = x.row.original
+    { id: 'trabajador', accessorFn: it => `${it.trabajador.codigo} ${it.trabajador.nombre}`, header: 'Trabajador', cell: x => { const it = x.row.original
       return <span><b className="font-semibold">{it.trabajador.nombre}</b><span className="block text-xs text-muted">{it.trabajador.codigo}{it.empresa ? ` · ${it.empresa}` : ''}</span></span> } },
     { accessorKey: 'tipo', header: 'Tipo', cell: x => <Pill tono={x.getValue() === 'he_no_programada' ? 'accent' : x.getValue() === 'fuera_geocerca' ? 'danger' : 'neutral'}>{TIPOS[x.getValue()] ?? x.getValue()}</Pill> },
-    { accessorKey: 'detalle', header: 'Detalle', cell: x => { const it = x.row.original
+    { accessorKey: 'detalle', header: 'Detalle', enableSorting: false, cell: x => { const it = x.row.original
       return <span className="block max-w-[340px]">{it.detalle}{it.alerta_pt && <span className="mt-1 block"><Pill tono="warning">{it.alerta_pt} (no bloquea)</Pill></span>}
         {it.observacion && <span className="block text-xs text-muted">Obs.: {it.observacion}</span>}</span> } },
     { accessorKey: 'estado', header: 'Estado', cell: x => { const it = x.row.original
       return <span className="flex flex-col items-start gap-0.5"><PillEstado estado={it.estado} />{it.destino && <span className="text-xs text-muted">→ {DESTINOS[it.destino]}</span>}</span> } },
-    { id: 'acc', header: 'Acción', enableSorting: false, cell: x => x.row.original.accionable ? <Decision it={x.row.original} onHecho={c.run} /> : <span className="text-muted">—</span> },
-  ], [c.run])
+    { id: 'acc', header: 'Acción', enableSorting: false, cell: x => x.row.original.accionable ? <Decision it={x.row.original} onHecho={() => setRecarga(n => n + 1)} /> : <span className="text-muted">—</span> },
+  ], [])
   return <Pantalla>
     <PageHeader titulo={`Excepciones ${rol === 'jefe' ? 'de mi unidad' : ''}`.trim()} icon={Inbox}
       desc={<>Las HE preautorizadas en el horario se pagan solas. El exceso no programado llega aquí como <b>no autorizado</b>; regularizarlo es opcional.
         Destino por defecto: el de las reglas vigentes de cada empresa. Las alertas PT85/PT102 son informativas y no bloquean.</>} />
     <div className="grid gap-4 sm:grid-cols-3">
-      <KpiCard icon={Inbox} label="Excepciones" value={c.datos ? String(items.length) : '…'} sub="con los filtros actuales" />
-      <KpiCard icon={Hourglass} label="Pendientes de decisión" value={c.datos ? String(pendientes) : '…'} accent="amber" sub="accionables por usted" />
-      <KpiCard icon={AlertTriangle} label="Fuera de geocerca" value={c.datos ? String(items.filter(i => i.tipo === 'fuera_geocerca').length) : '…'} accent="danger" sub="en el rango" />
+      <KpiCard icon={Inbox} label="Excepciones" value={resumen ? String(resumen.total) : '…'} sub="con los filtros actuales" />
+      <KpiCard icon={Hourglass} label="Pendientes de decisión" value={resumen ? String(resumen.pendientes) : '…'} accent="amber" sub="accionables por usted" />
+      <KpiCard icon={AlertTriangle} label="Fuera de geocerca" value={resumen ? String(resumen.fuera_geocerca) : '…'} accent="danger" sub="en el rango" />
     </div>
     <Card><Toolbar>
       <Field label="Desde"><input type="date" className="ds-input" value={desde} onChange={e => setDesde(e.target.value)} /></Field>
@@ -83,9 +84,9 @@ export function Excepciones({ rol }: { rol: string }) {
         {Object.entries(TIPOS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
       {rol !== 'jefe' && <Field label="Unidad"><select className="ds-input" value={unidad} onChange={e => setUnidad(e.target.value)}><option value="">Todas</option>
         {filtrarPorEmpresa(unidades, empresa, u => u.empresa_id).map(u => <option key={u.id} value={u.id}>{u.nombre}</option>)}</select></Field>}
-      <Button variant="primary" icon={Search} onClick={c.run}>Buscar</Button></Toolbar></Card>
-    <DataTable data={items} columns={cols} cargando={c.cargando} error={c.err} reintentar={c.run} vacio="Sin excepciones con esos filtros." tam={15}
-      buscar="Buscar trabajador, detalle…" chips={<Chips label="Estado" valor={estado} onChange={setEstado} chips={[{ valor: 'pendiente', label: 'Pendientes' },
+      <Button variant="primary" icon={Search} onClick={run}>Buscar</Button></Toolbar></Card>
+    <DataTable data={[]} columns={cols} servidor={{ url: '/excepciones/bandeja', params, clave: 'exc', recarga, alRecibir: r => setResumen(r.resumen) }} vacio="Sin excepciones con esos filtros." tam={15}
+      buscar="Buscar trabajador o tipo…" chips={<Chips label="Estado" valor={estado} onChange={setEstado} chips={[{ valor: 'pendiente', label: 'Pendientes' },
         { valor: 'aprobado', label: 'Aprobadas' }, { valor: 'rechazado', label: 'Rechazadas' }, { valor: 'informativo', label: 'Informativas' }, { valor: '', label: 'Todas' }]} />} />
   </Pantalla>
 }
@@ -93,8 +94,6 @@ export function Excepciones({ rol }: { rol: string }) {
 interface Saldo { id: number; codigo: string; nombre: string; unidad_id: number; saldo_horas: number; movimientos: number; creditos_por_vencer_30d: number; empresa_id?: number }
 
 function Movimientos({ t }: { t: Saldo }) {
-  const c = useCarga(() => api<any>(`/banco-horas/historial/${t.id}?limite=200`).then(r => r.movimientos as any[]), [t.id])
-  useEffect(() => { c.setDatos(null); c.run() }, [t.id])
   const cols = useMemo<ColumnDef<any, any>[]>(() => [
     { accessorKey: 'fecha_movimiento', header: 'Fecha' },
     { accessorKey: 'tipo', header: 'Tipo', cell: x => x.getValue() === 'credito' ? <Pill tono="success"><TrendingUp size={12} />Crédito</Pill> : <Pill tono="danger"><TrendingDown size={12} />Débito</Pill> },
@@ -104,7 +103,7 @@ function Movimientos({ t }: { t: Saldo }) {
     { accessorKey: 'origen', header: 'Origen' },
     { accessorKey: 'fecha_expira', header: 'Vence', cell: x => x.getValue() ?? '—' },
   ], [])
-  return <DataTable data={c.datos ?? []} columns={cols} cargando={c.cargando} error={c.err} reintentar={c.run} vacio="Sin movimientos." buscar={false}
+  return <DataTable data={[]} columns={cols} servidor={{ url: `/banco-horas/historial/${t.id}`, clave: 'mov' }} vacio="Sin movimientos." buscar={false}
     titulo={`Movimientos · ${t.codigo} ${t.nombre} — saldo ${t.saldo_horas.toFixed(2)} h`} />
 }
 
@@ -112,8 +111,9 @@ export function BolsaHoras({ rol }: { rol: string }) {
   const empresa = useEmpresaFiltro()
   const [sel, setSel] = useState<Saldo | null>(null)
   const [soloMov, setSoloMov] = useState<'si' | 'no'>(rol !== 'trabajador' ? 'si' : 'no')
-  const c = useCarga(() => api<Saldo[]>(`/banco-horas/saldos?${conEmpresa({ solo_con_movimientos: soloMov === 'si' }, rol === 'trabajador' ? '' : empresa)}`), [soloMov, empresa])
-  useEffect(() => { c.run().then(s => { if (rol === 'trabajador' && s?.length) setSel(s[0]) }) }, [soloMov, empresa])
+  // trabajador: sólo su fila (lista). Gestores: tabla paginada en la BD.
+  const c = useCarga(() => api<Saldo[]>('/banco-horas/saldos'), [])
+  useEffect(() => { if (rol === 'trabajador') c.run().then(s => { if (s?.length) setSel(s[0]) }) }, [])
   if (rol === 'trabajador') return <Pantalla>
     <PageHeader titulo="Mi bolsa de horas" icon={PiggyBank} desc="Horas compensables acumuladas por horas extra destinadas a compensación." />
     {c.err && <Aviso tono="danger">{c.err}</Aviso>}
@@ -132,7 +132,7 @@ export function BolsaHoras({ rol }: { rol: string }) {
   ]
   return <Pantalla>
     <PageHeader titulo={`Bolsa de horas ${rol === 'jefe' ? 'de mi unidad' : ''}`.trim()} icon={PiggyBank} desc="Saldos del banco de horas por trabajador y su historial de créditos/débitos." />
-    <DataTable data={c.datos ?? []} columns={cols} cargando={c.cargando} error={c.err} reintentar={c.run} buscar="Código o nombre" vacio="Sin trabajadores con saldo."
+    <DataTable data={[]} columns={cols} servidor={{ url: '/banco-horas/saldos', params: { solo_con_movimientos: soloMov === 'si', empresa_id: empresa }, clave: 'bolsa' }} buscar="Código o nombre" vacio="Sin trabajadores con saldo."
       filaClase={s => sel?.id === s.id ? 'bg-accent-soft/60' : undefined}
       chips={<Chips label="Movimientos" valor={soloMov} onChange={setSoloMov} chips={[{ valor: 'si', label: 'Sólo con movimientos' }, { valor: 'no', label: 'Todos' }]} />} />
     {sel && <Movimientos t={sel} />}

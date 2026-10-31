@@ -37,14 +37,12 @@ const mesActual = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Amer
 export function Notificaciones({ onCambio }: { onCambio?: () => void }) {
   const empresa = useEmpresaFiltro()
   const [periodo, setPeriodo] = useState(mesActual()); const [solo, setSolo] = useState<'no' | 'si'>('no')
-  const c = useCarga(() => api<any[]>(`/notificaciones?${conEmpresa({ solo_no_leidas: solo === 'si' }, empresa)}`), [solo, empresa])
-  useEffect(() => { c.run() }, [solo, empresa])
+  const [recarga, setRecarga] = useState(0); const c = { run: () => setRecarga(n => n + 1) }
   const generar = async () => {
     try { await api(`/notificaciones/generar?${conEmpresa({ periodo }, empresa)}`, { method: 'POST' }); ok(`Alertas de ${periodo} evaluadas.`); c.run(); onCambio?.() }
     catch (e) { fallo(e) }
   }
   const leer = async (n: any) => { await api(`/notificaciones/${n.id}/leida`, { method: 'POST' }).catch(() => {}); c.run(); onCambio?.() }
-  const lista = c.datos ?? []
   const cols: ColumnDef<any, any>[] = [
     { accessorKey: 'tipo', header: 'Tipo', cell: x => <span className="flex items-center gap-2">{!x.row.original.leida && <span className="size-2 rounded-full bg-accent" aria-label="No leída" />}
       <Pill tono={/riesgo|perd/.test(x.getValue()) ? 'danger' : 'warning'}>{ETIQUETA_ALERTA[x.getValue()] || x.getValue()}</Pill></span> },
@@ -59,7 +57,7 @@ export function Notificaciones({ onCambio }: { onCambio?: () => void }) {
       <Field label="Periodo"><input type="month" className="ds-input" value={periodo} onChange={e => setPeriodo(e.target.value)} /></Field>
       <Button variant="primary" icon={BellRing} onClick={generar}>Evaluar alertas</Button>
     </Toolbar></Card>
-    <DataTable data={lista} columns={cols} cargando={c.cargando} error={c.err} reintentar={c.run} vacio="Sin alertas activas." filaClase={n => n.leida ? undefined : 'bg-accent-soft/40'}
+    <DataTable data={[]} columns={cols} servidor={{ url: '/notificaciones', params: { solo_no_leidas: solo === 'si', empresa_id: empresa }, clave: 'notif', recarga }} vacio="Sin alertas activas." filaClase={n => n.leida ? undefined : 'bg-accent-soft/40'}
       chips={<Chips label="Lectura" valor={solo} onChange={setSolo} chips={[{ valor: 'no', label: 'Todas' }, { valor: 'si', label: 'Solo no leídas' }]} />} />
   </Pantalla>
 }

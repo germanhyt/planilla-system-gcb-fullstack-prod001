@@ -26,8 +26,7 @@ export function Bonos({ rol, meId }: { rol: string; meId: number }) {
   const [f, setF] = useState({ trabajador_id: '', cantidad: '1', monto: '', observacion: '' })
   const [hist, setHist] = useState<any[] | null>(null)
   const admin = rol === 'admin'
-  const c = useCarga(() => api<any[]>(`/bonos-nocturnos?${conEmpresa({ periodo }, empresa)}`), [empresa, periodo])
-  useEffect(() => { c.run() }, [empresa, periodo])
+  const [recarga, setRecarga] = useState(0); const c = { run: () => setRecarga(n => n + 1) }
   useEffect(() => { api('/trabajadores').then(setTrabs).catch(() => {}) }, [])
   const guardar = async () => {
     try {
@@ -43,7 +42,7 @@ export function Bonos({ rol, meId }: { rol: string; meId: number }) {
     catch (e) { fallo(e) }
   }
   const cols = useMemo<ColumnDef<any, any>[]>(() => [
-    { id: 't', accessorFn: b => `${b.trabajador_codigo} ${b.trabajador}`, header: 'Trabajador' },
+    { id: 'trabajador_codigo', accessorFn: b => `${b.trabajador_codigo} ${b.trabajador}`, header: 'Trabajador' },
     { accessorKey: 'periodo', header: 'Periodo', cell: x => <span className="inline-flex items-center gap-1">{x.getValue()}{x.row.original.periodo_cerrado && <Lock size={12} aria-label="cerrado" />}</span> },
     { accessorKey: 'cantidad', header: 'Cantidad' }, { accessorKey: 'monto', header: 'Monto', cell: x => soles(x.getValue()) },
     { accessorKey: 'estado', header: 'Estado', cell: x => <PillEstado estado={x.getValue()} /> },
@@ -65,7 +64,7 @@ export function Bonos({ rol, meId }: { rol: string; meId: number }) {
         <Field label="Observación"><input className="ds-input" value={f.observacion} onChange={e => setF({ ...f, observacion: e.target.value })} /></Field>
         <Button variant="primary" icon={Save} disabled={!f.trabajador_id} onClick={guardar}>Guardar</Button></Toolbar></div>}
     </Card>
-    <DataTable data={c.datos ?? []} columns={cols} cargando={c.cargando} error={c.err} reintentar={c.run} vacio="Sin bonos registrados en el periodo." />
+    <DataTable data={[]} columns={cols} servidor={{ url: '/bonos-nocturnos', params: { periodo, empresa_id: empresa }, clave: 'bonos', recarga }} vacio="Sin bonos registrados en el periodo." />
     <Modal abierto={!!hist} onClose={() => setHist(null)} titulo="Historial del bono">
       <ol className="m-0 grid list-none gap-2 p-0">{(hist ?? []).map((h, i) => <li key={i} className="rounded-ctl border border-border p-2 text-sm">
         <span className="text-xs text-muted">{fechaHora(h.ts)}</span><br /><b>{h.accion}</b> — cant. {h.cantidad} — {soles(h.monto)} — <PillEstado estado={h.estado} />{h.comentario ? ` — ${h.comentario}` : ''}</li>)}</ol>

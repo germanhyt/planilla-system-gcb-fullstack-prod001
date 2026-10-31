@@ -21,7 +21,7 @@ type Geo = 'todas' | 'dentro' | 'fuera' | 'sin_gps'
 function columnas(conTrabajador: boolean): ColumnDef<MarcaVista, any>[] {
   return [
     { accessorKey: 'dia_operativo', header: 'Día operativo', cell: c => <span title={`Corte ${c.row.original.corte}`}>{c.getValue()}</span> },
-    ...(conTrabajador ? [{ id: 'trab', accessorFn: (m: MarcaVista) => `${m.trabajador_codigo} ${m.trabajador_nombre}`, header: 'Trabajador',
+    ...(conTrabajador ? [{ id: 'trabajador', accessorFn: (m: MarcaVista) => `${m.trabajador_codigo} ${m.trabajador_nombre}`, header: 'Trabajador',
       cell: (c: any) => <span><b className="font-semibold">{c.row.original.trabajador_nombre}</b><span className="block text-xs text-muted">{c.row.original.trabajador_codigo}</span></span> }] : []),
     { accessorKey: 'tipo', header: 'Tipo', cell: c => c.getValue() === 'entrada'
       ? <Pill tono="accent"><ArrowUpRight size={12} />Entrada</Pill> : <Pill tono="neutral"><ArrowDownRight size={12} />Salida</Pill> },
@@ -35,12 +35,14 @@ function columnas(conTrabajador: boolean): ColumnDef<MarcaVista, any>[] {
   ]
 }
 
-function TablaMarcas({ marcas, conTrabajador, cargando, error, reintentar }: { marcas: MarcaVista[]; conTrabajador?: boolean; cargando: boolean; error: string; reintentar: () => void }) {
-  const [geo, setGeo] = useState<Geo>('todas')
+type Conteos = Record<Geo, number>
+/** S8 paso 7: paginada en la BD; el chip de geocerca filtra en el servidor y los contadores vienen en `conteos`. */
+function TablaMarcas({ url, params, recarga, conTrabajador, alContar }: { url: string; params: Record<string, string>; recarga: number; conTrabajador?: boolean; alContar?: (c: Conteos) => void }) {
+  const [geo, setGeo] = useState<Geo>('todas'); const [cnt, setCnt] = useState<Conteos | null>(null)
   const cols = useMemo(() => columnas(!!conTrabajador), [conTrabajador])
-  const n = (g: Geo) => g === 'todas' ? marcas.length : marcas.filter(m => m.geocerca === g).length
-  const datos = geo === 'todas' ? marcas : marcas.filter(m => m.geocerca === geo)
-  return <DataTable data={datos} columns={cols} cargando={cargando} error={error} reintentar={reintentar} vacio="Sin marcas en el rango seleccionado." tam={15}
+  const n = (g: Geo) => cnt?.[g]
+  return <DataTable data={[]} columns={cols} servidor={{ url, params: { ...params, geocerca: geo === 'todas' ? '' : geo }, clave: 'marcas', recarga,
+    alRecibir: r => { setCnt(r.conteos); alContar?.(r.conteos) } }} vacio="Sin marcas en el rango seleccionado." tam={15}
     buscar={conTrabajador ? 'Buscar trabajador, fecha…' : 'Buscar…'}
     chips={<Chips label="Geocerca" valor={geo} onChange={setGeo} chips={[{ valor: 'todas', label: 'Todas', n: n('todas') }, { valor: 'dentro', label: 'Dentro', n: n('dentro') },
       { valor: 'fuera', label: 'Fuera', n: n('fuera') }, { valor: 'sin_gps', label: 'Sin GPS', n: n('sin_gps') }]} />} />
@@ -61,12 +63,12 @@ function useCarga<T>(f: () => Promise<T>) {
 
 export function MisMarcas() {
   const [desde, setDesde] = useState(haceDias(6)); const [hasta, setHasta] = useState(hoyLima())
-  const c = useCarga(() => api<MarcaVista[]>(`/marcas/mias?desde=${desde}&hasta=${hasta}`))
-  useEffect(c.run, [])
+  const [rango, setRango] = useState({ desde, hasta }); const [recarga, setRecarga] = useState(0)
+  const run = () => { setRango({ desde, hasta }); setRecarga(n => n + 1) }
   return <Pantalla>
     <PageHeader titulo="Mis marcas" icon={List} desc="Hora del servidor en America/Lima. Cavas: las marcas antes de las 06:00 cuentan para el día operativo anterior." />
-    <Card><Toolbar><Rango {...{ desde, hasta, setDesde, setHasta }} /><Button variant="primary" icon={Search} onClick={c.run}>Buscar</Button></Toolbar></Card>
-    <TablaMarcas marcas={c.datos ?? []} cargando={c.cargando || c.datos === null} error={c.err} reintentar={c.run} />
+    <Card><Toolbar><Rango {...{ desde, hasta, setDesde, setHasta }} /><Button variant="primary" icon={Search} onClick={run}>Buscar</Button></Toolbar></Card>
+    <TablaMarcas url="/marcas/mias" params={rango} recarga={recarga} />
   </Pantalla>
 }
 
@@ -75,24 +77,25 @@ export function MarcasEquipo({ rol }: { rol: string }) {
   const [desde, setDesde] = useState(haceDias(6)); const [hasta, setHasta] = useState(hoyLima())
   const [trabajadores, setTrabajadores] = useState<any[]>([]); const [unidades, setUnidades] = useState<any[]>([])
   const [trab, setTrab] = useState(''); const [unidad, setUnidad] = useState('')
-  const c = useCarga(() => api<MarcaVista[]>(`/marcas/?${conEmpresa({ desde, hasta, trabajador_id: trab, unidad_id: unidad }, empresa)}`))
+  const filtros = () => ({ desde, hasta, trabajador_id: trab, unidad_id: unidad, empresa_id: empresa })
+  const [params, setParams] = useState(filtros); const [recarga, setRecarga] = useState(0); const [cnt, setCnt] = useState<Conteos | null>(null)
+  const run = () => { setParams(filtros()); setRecarga(n => n + 1) }
   useEffect(() => {
     api('/trabajadores').then(setTrabajadores).catch(() => {})
     if (rol !== 'jefe') api('/unidades').then(setUnidades).catch(() => {})
   }, [])
-  useEffect(c.run, [empresa])
+  useEffect(() => { setParams(p => ({ ...p, empresa_id: empresa })) }, [empresa])
   const uds = filtrarPorEmpresa(unidades, empresa, u => u.empresa_id)
   const visibles = filtrarPorEmpresa(unidad ? trabajadores.filter(t => String(t.unidad_id) === unidad) : trabajadores, empresa, t => t.empresa_id)
-  const m = c.datos ?? []
   return <Pantalla>
     <PageHeader titulo={`Marcas ${rol === 'jefe' ? 'de mi unidad' : ''}`.trim()} icon={Clock}
-      desc={c.datos ? `${m.length} marcas · ${m.filter(x => x.geocerca === 'fuera').length} fuera de geocerca` : 'Registros de entrada y salida del equipo.'} />
+      desc={cnt ? `${cnt.todas} marcas · ${cnt.fuera} fuera de geocerca` : 'Registros de entrada y salida del equipo.'} />
     <Card><Toolbar><Rango {...{ desde, hasta, setDesde, setHasta }} />
       {rol !== 'jefe' && <Field label="Unidad"><select className="ds-input" value={unidad} onChange={e => { setUnidad(e.target.value); setTrab('') }}>
         <option value="">Todas</option>{uds.map(u => <option key={u.id} value={u.id}>{u.nombre}</option>)}</select></Field>}
       <Field label="Trabajador"><select className="ds-input" value={trab} onChange={e => setTrab(e.target.value)}>
         <option value="">Todos</option>{visibles.map(t => <option key={t.id} value={t.id}>{t.codigo} · {t.nombres} {t.apellidos}</option>)}</select></Field>
-      <Button variant="primary" icon={Search} onClick={c.run}>Buscar</Button></Toolbar></Card>
-    <TablaMarcas marcas={m} conTrabajador cargando={c.cargando || c.datos === null} error={c.err} reintentar={c.run} />
+      <Button variant="primary" icon={Search} onClick={run}>Buscar</Button></Toolbar></Card>
+    <TablaMarcas url="/marcas/" params={params} recarga={recarga} conTrabajador alContar={setCnt} />
   </Pantalla>
 }

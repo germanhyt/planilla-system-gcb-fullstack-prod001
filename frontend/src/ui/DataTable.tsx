@@ -25,7 +25,9 @@ type Props<T> = {
   cargando?: boolean; error?: string; reintentar?: () => void; vacio?: string; tam?: number; ordenInicial?: SortingState
   filaClase?: (f: T) => string | undefined; testid?: string; compacta?: boolean
   /** Paginación server-side: `url` del listado y filtros extra (vacíos se omiten); `clave` prefija el estado en la URL; cambiar `recarga` vuelve a pedir. */
-  servidor?: { url: string; params?: Record<string, string | number | boolean | null | undefined>; clave?: string; recarga?: number }
+  servidor?: { url: string; params?: Record<string, string | number | boolean | null | undefined>; clave?: string; recarga?: number
+    /** Recibe la respuesta completa (p. ej. claves extra como `resumen`/`conteos`). */
+    alRecibir?: (r: any) => void }
   tamanos?: number[]
   /** Agrega una columna N° con la numeración global (continúa entre páginas). */
   numerar?: boolean
@@ -78,7 +80,7 @@ export function DataTable<T>({ data, columns, buscar = 'Buscar…', chips, accio
     p.set('page', String(pag.pageIndex + 1)); p.set('page_size', String(pag.pageSize)); if (sort) p.set('sort', sort); if (qd) p.set('q', qd)
     const id = ++pid.current; setSCarga(true); setSErr('')
     api<Pagina<T>>(`${servidor.url}${servidor.url.includes('?') ? '&' : '?'}${p}`)
-      .then(r => { if (id !== pid.current) return; setRes(r); if (r.page - 1 !== pag.pageIndex) setPag(x => ({ ...x, pageIndex: r.page - 1 })) })
+      .then(r => { if (id !== pid.current) return; setRes(r); servidor.alRecibir?.(r); if (r.page - 1 !== pag.pageIndex) setPag(x => ({ ...x, pageIndex: r.page - 1 })) })
       .catch(e => id === pid.current && setSErr(e.message)).finally(() => id === pid.current && setSCarga(false))
   }
   // filtros/búsqueda nuevos -> página 1
