@@ -3,7 +3,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlalchemy import and_
+from sqlalchemy import Date, Interval, String, Time, and_, case, cast, func, literal, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from zoneinfo import ZoneInfo
@@ -13,7 +13,9 @@ from ..audit import audit
 from ..cierre import exigir_abierto_ts
 from ..db import get_db
 from ..deps import require
-from ..engine import calcular_distancia, get_dia_operativo
+from ..engine import calcular_distancia, get_dia_operativo  # noqa: F401
+from ..paginacion import filtrar_sql, paginar_sql, params_pagina
+from ..reglas_sql import regla_sql
 from ..models import Marca, RuleSet, Sede, Trabajador, Usuario
 from ..rules import BASE, efectivas
 from ..schemas import MarcaIn, MarcaManualIn
@@ -279,8 +281,22 @@ def _parse_fecha(v: Optional[str], nombre: str) -> Optional[date]:
         raise HTTPException(422, f"{nombre} debe tener formato YYYY-MM-DD") from e
 
 
-def _consultar(db: Session, trabajadores: dict[int, Trabajador], desde: Optional[str], hasta: Optional[str]) -> list[dict]:
-    """Marcas de los trabajadores dados, filtradas por día operativo [desde, hasta] (fechas Lima)."""
+def _geocerca_sql():
+    return case((or_(Marca.lat.is_(None), Marca.lng.is_(None)), literal("sin_gps")),
+                (Marca.validacion_estado == "fuera_geocerca", literal("fuera")), else_=literal("dentro"))
+
+
+def _origen_sql():
+    return case((Marca.metodo == "manual", literal("manual")),
+                (or_(Marca.metodo == "qr", Marca.qr_code.isnot(None)), literal("qr")), else_=literal("gps"))
+
+
+def _consultar(db: Session, filtro, desde: Optional[str], hasta: Optional[str], pag: Optional[dict] = None):
+    """Marcas de los trabajadores del ``filtro``, por día operativo [desde, hasta] (fechas Lima).
+
+    S8 paso 7: el día operativo (corte versionado por empresa) se calcula en SQL, así que filtro, conteo por
+    geocerca, orden y LIMIT/OFFSET van en la BD. Con ``?page=``: ``{items,total,page,page_size,pages,conteos}``
+    (filtros ``geocerca``, ``tipo``, ``origen``, ``q``); sin ``page``: la lista completa como antes."""
     hoy = datetime.now(LIMA).date()
     d_hasta = _parse_fecha(hasta, "hasta") or hoy
     d_desde = _parse_fecha(desde, "desde") or (d_hasta - timedelta(days=6))
@@ -288,61 +304,82 @@ def _consultar(db: Session, trabajadores: dict[int, Trabajador], desde: Optional
         raise HTTPException(422, "'desde' no puede ser posterior a 'hasta'")
     if (d_hasta - d_desde).days > 92:
         raise HTTPException(422, "El rango máximo es de 93 días")
-    if not trabajadores:
-        return []
     # ventana amplia en hora Lima: el corte máximo es < 24h, el día operativo 'hasta' termina antes de hasta+2 00:00
     ini = datetime.combine(d_desde, time(0), LIMA)
     fin = datetime.combine(d_hasta + timedelta(days=2), time(0), LIMA)
-    marcas = db.query(Marca).filter(Marca.trabajador_id.in_(list(trabajadores)), Marca.ts_servidor >= ini,
-                                    Marca.ts_servidor < fin).order_by(Marca.ts_servidor.desc()).all()
-    cache: dict = {}
-    out = []
-    for m in marcas:
-        t = trabajadores[m.trabajador_id]
-        ts_lima = m.ts_servidor.astimezone(LIMA)
-        corte = _corte_empresa(db, t.empresa_id, ts_lima.date(), cache)
-        dia_op = get_dia_operativo(ts_lima.replace(tzinfo=None), corte)
-        if not (d_desde <= dia_op <= d_hasta):
-            continue
-        out.append({
-            "id": m.id,
-            "trabajador_id": t.id,
-            "trabajador_codigo": t.codigo,
-            "trabajador_nombre": f"{t.nombres} {t.apellidos}",
-            "unidad_id": t.unidad_id,
-            "tipo": m.tipo,
-            "ts_servidor": m.ts_servidor.isoformat(),
-            "ts_lima": ts_lima.isoformat(),
-            "fecha_lima": ts_lima.date().isoformat(),
-            "hora_lima": ts_lima.strftime("%H:%M:%S"),
-            "origen": _origen(m),
-            "geocerca": _geocerca(m),
-            "distancia_m": float(m.distancia_m) if m.distancia_m is not None else None,
-            "validacion_estado": m.validacion_estado,
-            "dia_operativo": dia_op.isoformat(),
-            "corte": corte,
-            "razon_manual": m.razon_manual,
-            "diferida": bool(m.diferida),
-            "ts_cliente": m.ts_cliente.isoformat() if m.ts_cliente else None,
-            "diferencia_min": m.diferencia_min,
-        })
-    return out
+    ts_lima = func.timezone("America/Lima", Marca.ts_servidor)
+    corte = regla_sql(db, Trabajador.empresa_id, cast(ts_lima, Date),
+                      lambda r: r["dia_operativo"].get("corte") or "00:00", defecto="00:00", tipo=String())
+    dia_op = cast(ts_lima - cast(corte, Interval), Date)
+    geo, origen = _geocerca_sql(), _origen_sql()
+    stmt = (select(Marca, Trabajador, dia_op.label("dia_op"), corte.label("corte"))
+            .join(Trabajador, Trabajador.id == Marca.trabajador_id)
+            .where(filtro, Marca.ts_servidor >= ini, Marca.ts_servidor < fin, dia_op >= d_desde, dia_op <= d_hasta))
+    params = {k: v for k, v in (pag or {}).items() if k in ("q", "sort", "page", "page_size", "geocerca", "tipo", "origen")}
+    buscar = (Trabajador.codigo, Trabajador.nombres, Trabajador.apellidos, Marca.tipo, Marca.metodo)
+    res = paginar_sql(
+        db, stmt, params, _fila_marca, buscar=buscar, filtros={"geocerca": geo, "tipo": Marca.tipo, "origen": origen},
+        orden={"dia_operativo": dia_op, "trabajador": Trabajador.codigo, "trabajador_codigo": Trabajador.codigo,
+               "trabajador_nombre": Trabajador.nombres, "tipo": Marca.tipo, "ts_servidor": Marca.ts_servidor,
+               "ts_lima": Marca.ts_servidor, "fecha_lima": Marca.ts_servidor, "hora_lima": cast(ts_lima, Time),
+               "origen": origen, "geocerca": geo, "distancia_m": Marca.distancia_m,
+               "validacion_estado": Marca.validacion_estado},
+        orden_def=(Marca.ts_servidor.desc(),), desempate=(Marca.id.desc(),), sin_limite=pag is None)
+    if pag is None:
+        return res["items"]
+    f = filtrar_sql(stmt.add_columns(geo.label("geo")), params, buscar=buscar,
+                    filtros={"tipo": Marca.tipo, "origen": origen}).subquery()
+    conteos = {"todas": 0, "dentro": 0, "fuera": 0, "sin_gps": 0}
+    for g, n in db.execute(select(f.c.geo, func.count()).group_by(f.c.geo)).all():
+        conteos[g] = n
+        conteos["todas"] += n
+    res["conteos"] = conteos
+    return res
+
+
+def _fila_marca(r) -> dict:
+    m, t, dia_op, corte = r
+    ts_lima = m.ts_servidor.astimezone(LIMA)
+    return {
+        "id": m.id,
+        "trabajador_id": t.id,
+        "trabajador_codigo": t.codigo,
+        "trabajador_nombre": f"{t.nombres} {t.apellidos}",
+        "unidad_id": t.unidad_id,
+        "tipo": m.tipo,
+        "ts_servidor": m.ts_servidor.isoformat(),
+        "ts_lima": ts_lima.isoformat(),
+        "fecha_lima": ts_lima.date().isoformat(),
+        "hora_lima": ts_lima.strftime("%H:%M:%S"),
+        "origen": _origen(m),
+        "geocerca": _geocerca(m),
+        "distancia_m": float(m.distancia_m) if m.distancia_m is not None else None,
+        "validacion_estado": m.validacion_estado,
+        "dia_operativo": dia_op.isoformat(),
+        "corte": corte,
+        "razon_manual": m.razon_manual,
+        "diferida": bool(m.diferida),
+        "ts_cliente": m.ts_cliente.isoformat() if m.ts_cliente else None,
+        "diferencia_min": m.diferencia_min,
+    }
 
 
 @r.get("/mias")
 def mis_marcas(desde: Optional[str] = None, hasta: Optional[str] = None, db: Session = Depends(get_db),
-               u: Usuario = Depends(require("trabajador", "jefe", "rrhh", "admin"))):
+               u: Usuario = Depends(require("trabajador", "jefe", "rrhh", "admin")),
+               pag: Optional[dict] = Depends(params_pagina)):
     """Marcas del trabajador vinculado al usuario, por rango de día operativo (default: últimos 7 días)."""
     t = db.query(Trabajador).filter(Trabajador.usuario_id == u.id).first()
     if not t:
         raise HTTPException(404, "Usuario no vinculado a trabajador")
-    return _consultar(db, {t.id: t}, desde, hasta)
+    return _consultar(db, Trabajador.id == t.id, desde, hasta, pag)
 
 
 @r.get("/")
 def marcas_por_trabajador_fecha(desde: Optional[str] = None, hasta: Optional[str] = None,
                                 trabajador_id: Optional[int] = None, unidad_id: Optional[int] = None,
-                                empresa_id: Optional[int] = None, db: Session = Depends(get_db), u: Usuario = Depends(require("jefe", "rrhh", "admin"))):
+                                empresa_id: Optional[int] = None, db: Session = Depends(get_db), u: Usuario = Depends(require("jefe", "rrhh", "admin")),
+                                pag: Optional[dict] = Depends(params_pagina)):
     """Marcas por trabajador/fecha. Jefe: solo su unidad. RRHH/admin: todo."""
     if u.rol == "jefe":
         if not u.unidad_id:
@@ -350,15 +387,14 @@ def marcas_por_trabajador_fecha(desde: Optional[str] = None, hasta: Optional[str
         if unidad_id is not None and unidad_id != u.unidad_id:
             raise HTTPException(403, "Solo puede ver trabajadores de su unidad")
         unidad_id = u.unidad_id
-    q = db.query(Trabajador).filter(filtro_empresa(u, empresa_id))
+    conds = [filtro_empresa(u, empresa_id)]
     if unidad_id is not None:
-        q = q.filter(Trabajador.unidad_id == unidad_id)
+        conds.append(Trabajador.unidad_id == unidad_id)
     if trabajador_id is not None:
         t = db.get(Trabajador, trabajador_id)
         if not t:
             raise HTTPException(404, "Trabajador no encontrado")
         if fuera_de_alcance(u, t):
             raise HTTPException(403, "Solo puede ver trabajadores de su unidad")
-        q = q.filter(Trabajador.id == trabajador_id)
-    trabajadores = {t.id: t for t in q.all()}
-    return _consultar(db, trabajadores, desde, hasta)
+        conds.append(Trabajador.id == trabajador_id)
+    return _consultar(db, and_(*conds), desde, hasta, pag)
