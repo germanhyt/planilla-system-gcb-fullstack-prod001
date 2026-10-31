@@ -18,7 +18,7 @@ async function descargar(path: string, method = 'GET'): Promise<{ nombre: string
   if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(typeof d.detail === 'string' ? d.detail : String(r.status)) }
   const nombre = /filename=([^;]+)/.exec(r.headers.get('content-disposition') || '')?.[1] || 'reporte'
   const url = URL.createObjectURL(await r.blob()); const a = document.createElement('a'); a.href = url; a.download = nombre; a.click(); URL.revokeObjectURL(url)
-  return { nombre, estado: r.headers.get('x-export-estado'), reutilizada: r.headers.get('x-export-reutilizada') === 'true' }
+  return { nombre, estado: r.headers.get('x-export-estado'), reutilizada: r.headers.get('x-export-reutilizada') === '1' }
 }
 
 export function Reportes({ rol }: { rol: string }) {

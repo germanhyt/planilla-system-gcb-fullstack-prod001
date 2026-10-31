@@ -158,3 +158,13 @@ Nueva migración: `$C run --rm -v $PWD/backend:/app api alembic revision --autog
 - **Demo (solo seed dev)**: `rrhh.gcb@demo.gcb.pe`, `jefe.refugio@demo.gcb.pe`, trabajadores ficticios `REF-001..006` (turnos 08-16 y 17-01).
   En un volumen ya sembrado ejecutar `docker compose ... exec api python seed.py` (idempotente).
 - **Golden tests**: `backend/tests/test_engine_golden_gcbsa.py`; E2E: `e2e/tests/gcbsa.spec.ts`.
+
+## Sprint 7 - Integración Planilla Core (hardening)
+- Contrato `PC-ASIS-1.1` versionado: `docs/contratos/PC-ASIS-1.1.md` + JSON Schema (`/api/reportes/export-planilla-core/contrato`).
+- Export por empresa con checksum, historial de versiones (`export_planilla`) y re-export idempotente; incluye BHCRE/BHDEB/BHSAL.
+- Trabajos en segundo plano (RQ, cola `recalc`): recálculo de periodo y export por lote; `GET /api/trabajos/{id}` con progreso.
+  Por debajo de `JOBS_UMBRAL_SYNC` (40 trabajadores) se ejecutan en la petición. **El servicio `worker` debe estar activo** para los trabajos encolados.
+  `JOBS_MODO=inline` (tests) ejecuta todo en proceso.
+- Notificaciones internas RRHH/admin (`/api/notificaciones`, badge en el menú): asistencia decidida sin marcas, pendientes cerca del cierre,
+  riesgo part time y bonos sin aprobar; se resuelven solas al corregirse.
+- Seed: planes de horario de estacionamiento deterministas; etiqueta de horas nocturnas tomada de la configuración.
