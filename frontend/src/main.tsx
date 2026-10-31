@@ -1,4 +1,7 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
+import './theme/theme.css'
+import { buildThemeCss } from './theme/tokens'
+import { applyTheme, getTheme } from './theme/theme'
 import { createRoot } from 'react-dom/client'
 import { api, getToken } from './api'
 import { Crud, Campo } from './Crud'
@@ -110,4 +113,9 @@ nav .act{font-weight:bold}main{padding:12px}table{border-collapse:collapse;width
 .login{max-width:320px;margin:80px auto;display:flex;flex-direction:column;gap:8px}.err{color:#b00}
 .alerta{color:#8a5a00;background:#fff4dc;padding:2px 6px;font-size:12px;margin-top:2px}.decision{display:flex;flex-wrap:wrap;gap:4px;align-items:center}tr.sel{background:#eef4ff}.badge{background:#c62828;color:#fff;border-radius:9px;padding:0 6px;margin-left:4px;font-size:11px}`
 document.head.insertAdjacentHTML('beforeend', `<style>${css}</style>`)
-createRoot(document.getElementById('root')!).render(<App />)
+document.head.insertAdjacentHTML('beforeend', `<style id="gcb-tokens">${buildThemeCss()}</style>`)
+applyTheme(getTheme(typeof localStorage === 'undefined' ? null : localStorage), document)
+// /design-preview solo en DEV (import.meta.env.DEV es false en build -> el chunk se elimina)
+const DesignPreview = import.meta.env.DEV ? lazy(() => import('./design/DesignPreview')) : null
+createRoot(document.getElementById('root')!).render(
+  DesignPreview && location.pathname === '/design-preview' ? <Suspense fallback={null}><DesignPreview /></Suspense> : <App />)

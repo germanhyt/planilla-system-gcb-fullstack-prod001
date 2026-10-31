@@ -1,0 +1,32 @@
+/* Tailwind v4 SIN preflight (no rompe vistas existentes): solo theme + utilities */
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+@import "@fontsource-variable/inter";
+
+@theme inline {
+  --color-bg: var(--c-bg);
+  --color-surface: var(--c-surface);
+  --color-surface-2: var(--c-surface-2);
+  --color-line: var(--c-border);
+  --color-fg: var(--c-text);
+  --color-muted: var(--c-muted);
+  --color-primary: var(--c-primary);
+  --color-primary-fg: var(--c-primary-fg);
+  --color-pill-active: var(--c-pill-active);
+  --color-blue: var(--c-blue);
+  --color-amber: var(--c-amber);
+  --color-teal: var(--c-teal);
+  --color-success: var(--c-success);
+  --color-success-bg: var(--c-success-bg);
+  --color-warning: var(--c-warning);
+  --color-warning-bg: var(--c-warning-bg);
+  --color-danger: var(--c-danger);
+  --color-danger-bg: var(--c-danger-bg);
+  --radius-card: var(--r-lg);
+  --radius-ctl: var(--r-md);
+  --font-sans: var(--font);
+}
+.ds { font-family: var(--font); color: var(--c-text); background: var(--c-bg); }
+.ds *, .ds *::before, .ds *::after { box-sizing: border-box; }
+.ds :focus-visible { outline: 2px solid var(--c-blue); outline-offset: 2px; }
