@@ -10,6 +10,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..alcance import fuera_de_alcance
@@ -19,6 +20,7 @@ from ..db import get_db
 from ..deps import current_user, require
 from ..engine import recalcular_rango, refrigerio_efectivo, resolver_turno_dia
 from ..models import HorarioAsignacion, TipoContrato, Trabajador, TurnoPlantilla, Usuario
+from ..paginacion import paginar_sql, params_pagina
 
 r = APIRouter(prefix="/asignaciones-horario", tags=["asignaciones_horario"])
 
@@ -49,8 +51,15 @@ def _out(a: HorarioAsignacion) -> dict:
 
 
 @r.get("")
-def listar(trabajador_id: int, db: Session = Depends(get_db), u: Usuario = Depends(current_user)):
+def listar(trabajador_id: int, db: Session = Depends(get_db), u: Usuario = Depends(current_user),
+           pag: Optional[dict] = Depends(params_pagina)):
     _trab(db, u, trabajador_id, escritura=False)
+    if pag is not None:  # S9: paginado en la BD
+        H = HorarioAsignacion
+        return paginar_sql(db, select(H).where(H.trabajador_id == trabajador_id), pag, _out, escalar=True,
+                           buscar=(H.nota,), fecha=H.vigente_desde,
+                           orden={"vigente_desde": H.vigente_desde, "vigente_hasta": H.vigente_hasta, "nota": H.nota},
+                           orden_def=(H.vigente_desde.desc(),), desempate=(H.id.desc(),))
     q = db.query(HorarioAsignacion).filter(HorarioAsignacion.trabajador_id == trabajador_id)
     return [_out(a) for a in q.order_by(HorarioAsignacion.vigente_desde.desc(), HorarioAsignacion.id.desc())]
 

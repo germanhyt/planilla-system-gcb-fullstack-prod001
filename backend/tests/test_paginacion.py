@@ -1,20 +1,5 @@
 ﻿"""S8: paginación/orden/búsqueda/filtros server-side (opt-in con ?page=) y alcance multiempresa."""
-from app.paginacion import PAGE_SIZE_MAX, paginar
-
-
-def test_paginar_unitario():
-    filas = [{"id": i, "nombre": f"Ñandú {i}" if i % 2 else f"Pérez {i}", "estado": "pendiente" if i % 3 else "aprobada",
-              "trabajador": {"empresa_id": 1 if i < 30 else 2}, "dia": f"2026-10-{i % 28 + 1:02d}"} for i in range(1, 46)]
-    r = paginar(filas, {"page": "2", "page_size": "10"})
-    assert r["total"] == 45 and r["page"] == 2 and r["page_size"] == 10 and r["pages"] == 5
-    assert [f["id"] for f in r["items"]] == list(range(11, 21))
-    assert paginar(filas, {"page": "99", "page_size": "10"})["page"] == 5  # se acota a la última
-    assert paginar(filas, {"page": "1", "page_size": "100000"})["page_size"] == PAGE_SIZE_MAX
-    assert paginar(filas, {"page": "1", "q": "perez"})["total"] == 22  # sin acentos ni mayúsculas
-    assert paginar(filas, {"page": "1", "empresa_id": "2"})["total"] == 16  # trabajador.empresa_id
-    assert paginar(filas, {"page": "1", "estado": "aprobada"})["total"] == 15
-    assert paginar(filas, {"page": "1", "sort": "-id", "page_size": "3"})["items"][0]["id"] == 45
-    assert paginar(filas, {"page": "1", "desde": "2026-10-27", "hasta": "2026-10-28"})["total"] == 2
+from app.paginacion import PAGE_SIZE_MAX
 
 
 def test_sin_page_no_cambia(client, H):
@@ -63,3 +48,8 @@ def test_notificaciones_leer_todas(client, H, ids):
     assert client.post("/notificaciones/leer-todas", headers=H["jefe"]).status_code == 403
     cav = ids["emp"]["CAVAS"]
     assert client.post(f"/notificaciones/leer-todas?empresa_id={cav}", headers=H["rrhh_gcb"]).status_code == 403
+
+
+def test_page_size_acotado_en_bd(client, H):
+    r = client.get("/trabajadores?page=99&page_size=100000", headers=H["rrhh"]).json()
+    assert r["page_size"] == PAGE_SIZE_MAX and r["page"] == r["pages"]

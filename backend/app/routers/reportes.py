@@ -15,7 +15,7 @@ from io import BytesIO, StringIO
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from sqlalchemy import func
+from sqlalchemy import Numeric, case, cast, func, literal, or_, select
 from sqlalchemy.orm import Session
 
 from ..alcance import empresa_alcance
@@ -32,6 +32,7 @@ from ..models import (
     Trabajador,
     Usuario,
 )
+from ..paginacion import paginar_sql, params_pagina
 
 router = APIRouter(prefix="/reportes", tags=["reportes"])
 
@@ -204,6 +205,115 @@ def _consolidado_mensual_data(db: Session, periodo: str, empresa_id: Optional[in
     return sorted(out, key=lambda x: x["codigo"])
 
 
+# ---------------------------------------------------------------- S9: consolidado agregado en la BD
+_NUM = ("horas_trabajadas", "horas_normales", "horas_extra_25", "horas_extra_35", "horas_nocturnas", "bono_3am_monto",
+        "banco_horas_mes", "banco_horas_saldo", "banco_horas_creditos", "banco_horas_debitos")
+_ENT = ("tardanza_min", "ausencias", "dias_trabajados", "bono_3am")
+_TOTALES = ("horas_trabajadas", "horas_normales", "tardanza_min", "horas_extra_25", "horas_extra_35",
+            "horas_nocturnas", "bono_3am", "bono_3am_monto", "banco_horas_mes", "banco_horas_saldo")
+
+
+def _r2sql(x):
+    return func.round(cast(func.coalesce(x, 0), Numeric), 2)
+
+
+def _consolidado_sql(periodo: str, empresa_id: Optional[int], unidad_id: Optional[int], trabajador_id: Optional[int]):
+    """Subconsulta con una fila por trabajador (mismas claves y redondeos que ``_consolidado_mensual_data``):
+    sumas de asistencia por dia operativo, bono 3 AM aprobado y banco de horas, todo agregado en la BD."""
+    desde, hasta = rango(periodo)
+    A, B, BH, T = Asistencia, BonoNocturno, BancoHorasCompensatorias, Trabajador
+    asis = select(
+        A.trabajador_id.label("tid"), func.sum(A.horas_trabajadas).label("ht"), func.sum(A.tardanza_min).label("tar"),
+        func.sum(A.horas_extra_25).label("h25"), func.sum(A.horas_extra_35).label("h35"),
+        func.sum(A.horas_nocturnas).label("noc"),
+        func.count().filter(func.coalesce(A.horas_trabajadas, 0) != 0).label("dias"),
+        func.count().filter(func.coalesce(A.horas_trabajadas, 0) == 0).label("aus"),
+    ).where(A.dia_operativo >= desde, A.dia_operativo <= hasta).group_by(A.trabajador_id).subquery()
+    bono = select(B.trabajador_id.label("tid"), func.sum(B.cantidad).label("cant"), func.sum(B.monto).label("monto")).where(
+        B.periodo == periodo, B.estado == "aprobado").group_by(B.trabajador_id).subquery()
+    mov = select(
+        BH.trabajador_id.label("tid"),
+        func.sum(case((BH.tipo == "credito", BH.horas), else_=-BH.horas)).label("mov"),
+        func.sum(case((BH.tipo == "credito", BH.horas), else_=0)).label("cre"),
+        func.sum(case((BH.tipo == "credito", 0), else_=BH.horas)).label("deb"),
+    ).where(BH.fecha_movimiento >= desde, BH.fecha_movimiento <= hasta).group_by(BH.trabajador_id).subquery()
+    saldo = select(BH.saldo_nuevo).where(BH.trabajador_id == T.id, BH.fecha_movimiento <= hasta).correlate(T).order_by(
+        BH.fecha_movimiento.desc(), BH.id.desc()).limit(1).scalar_subquery()
+    ht = func.coalesce(asis.c.ht, 0)
+    he = func.coalesce(asis.c.h25, 0) + func.coalesce(asis.c.h35, 0)
+    stmt = select(
+        T.id.label("trabajador_id"), T.codigo.label("codigo"), T.nombres.label("nombres"), T.apellidos.label("apellidos"),
+        (T.nombres + literal(" ") + T.apellidos).label("trabajador"), T.doc_tipo.label("doc_tipo"),
+        T.doc_numero.label("doc_numero"), T.empresa_id.label("empresa_id"), Empresa.codigo.label("empresa"),
+        T.unidad_id.label("unidad_id"),
+        _r2sql(asis.c.ht).label("horas_trabajadas"), func.coalesce(asis.c.tar, 0).label("tardanza_min"),
+        _r2sql(asis.c.h25).label("horas_extra_25"), _r2sql(asis.c.h35).label("horas_extra_35"),
+        _r2sql(asis.c.noc).label("horas_nocturnas"), func.coalesce(asis.c.aus, 0).label("ausencias"),
+        func.coalesce(asis.c.dias, 0).label("dias_trabajados"),
+        _r2sql(func.greatest(0, ht - he)).label("horas_normales"),
+        func.coalesce(bono.c.cant, 0).label("bono_3am"), _r2sql(bono.c.monto).label("bono_3am_monto"),
+        _r2sql(mov.c.mov).label("banco_horas_mes"), _r2sql(saldo).label("banco_horas_saldo"),
+        _r2sql(mov.c.cre).label("banco_horas_creditos"), _r2sql(mov.c.deb).label("banco_horas_debitos"),
+    ).select_from(T).outerjoin(asis, asis.c.tid == T.id).outerjoin(bono, bono.c.tid == T.id).outerjoin(
+        mov, mov.c.tid == T.id).outerjoin(Empresa, Empresa.id == T.empresa_id).where(
+        or_(asis.c.tid.is_not(None), bono.c.tid.is_not(None)))
+    if empresa_id:
+        stmt = stmt.where(T.empresa_id == empresa_id)
+    if unidad_id:
+        stmt = stmt.where(T.unidad_id == unidad_id)
+    if trabajador_id:
+        stmt = stmt.where(T.id == trabajador_id)
+    return stmt.subquery("consolidado")
+
+
+def _fila_consolidado(r, flags: dict) -> dict:
+    d = dict(r._mapping)
+    for k in _NUM:
+        d[k] = float(d[k] or 0)
+    for k in _ENT:
+        d[k] = int(d[k] or 0)
+    d["recargo_nocturno_horas"] = d["horas_nocturnas"] if flags[d["empresa_id"]] else None
+    return d
+
+
+def _totales_sql(db: Session, s, desde: date) -> dict:
+    """Totales del consolidado (suma de valores ya redondeados por fila, igual que la respuesta clasica)."""
+    cols = [func.count().label("n"), func.coalesce(func.sum(s.c.ausencias), 0).label("ausencias")] + [
+        func.coalesce(func.sum(s.c[k]), 0).label(k) for k in _TOTALES]
+    tot = {"total_trabajadores": 0, **{f"total_{k}": 0.0 for k in _TOTALES}, "total_recargo_nocturno_horas": 0.0,
+           "total_ausencias": 0}
+    for r in db.execute(select(s.c.empresa_id, *cols).group_by(s.c.empresa_id)):
+        m = r._mapping
+        tot["total_trabajadores"] += m["n"]
+        tot["total_ausencias"] += int(m["ausencias"])
+        for k in _TOTALES:
+            tot[f"total_{k}"] += float(m[k])
+        if recargo_separado(db, m["empresa_id"], desde):
+            tot["total_recargo_nocturno_horas"] += float(m["horas_nocturnas"])
+    return {k: (_r2(v) if k.startswith("total_") and k not in ("total_trabajadores", "total_ausencias") else v)
+            for k, v in tot.items()}
+
+
+def _consolidado_pagina(db: Session, periodo: str, empresa_id, unidad_id, trabajador_id, pag: dict) -> dict:
+    desde, _ = rango(periodo)
+    s = _consolidado_sql(periodo, empresa_id, unidad_id, trabajador_id)
+    flags: dict[int, bool] = {}
+
+    def fila(r):
+        e = r._mapping["empresa_id"]
+        if e not in flags:
+            flags[e] = recargo_separado(db, e, desde)
+        return _fila_consolidado(r, flags)
+
+    orden = {k: s.c[k] for k in ("codigo", "trabajador", "empresa", *_NUM, *_ENT)}
+    orden["recargo_nocturno_horas"] = s.c.horas_nocturnas
+    res = paginar_sql(db, select(s), pag, fila, buscar=(s.c.codigo, s.c.nombres, s.c.apellidos, s.c.doc_numero),
+                      orden=orden, orden_def=(s.c.codigo,), desempate=(s.c.trabajador_id,))
+    tot = _totales_sql(db, s, desde)
+    tot.pop("total_ausencias")
+    return res | {"totales": tot}
+
+
 def _tabla_csv(registros: list[dict], ventana: str = "22:00-06:00") -> str:
     buf = StringIO()
     w = csv.writer(buf, lineterminator="\n")
@@ -240,10 +350,22 @@ def consolidado_mensual(
     formato: str = Query("json", pattern=r"^(json|excel|xlsx|csv)$"),
     db: Session = Depends(get_db),
     user: Usuario = Depends(current_user),
+    pag: Optional[dict] = Depends(params_pagina),
 ):
-    """Consolidado mensual por trabajador (pantalla Reportes) con descarga CSV/XLSX."""
+    """Consolidado mensual por trabajador (pantalla Reportes) con descarga CSV/XLSX.
+
+    S9: con ``?page=`` (sólo JSON) las filas se agregan, filtran (``q``), ordenan (``sort``) y paginan en la BD;
+    ``totales`` se calcula con un agregado SQL sobre todo el periodo. Sin ``page`` la respuesta no cambia."""
     unidad_id = _unidad_alcance(user, unidad_id)
     empresa_id = empresa_alcance(user, empresa_id)
+    if formato == "json" and pag is not None:
+        desde, hasta = rango(periodo)
+        extra = {"ventana_nocturna": ventana_nocturna(db, empresa_id, hasta)}
+        if empresa_id:
+            extra |= {"empresa_id": empresa_id, "periodo_cerrado": periodo_cerrado(db, empresa_id, periodo),
+                      "muestra_recargo_nocturno": recargo_separado(db, empresa_id, desde)}
+        return {"periodo": periodo, "desde": desde.isoformat(), "hasta": hasta.isoformat(), **extra,
+                **_consolidado_pagina(db, periodo, empresa_id, unidad_id, trabajador_id, pag)}
     registros = _consolidado_mensual_data(db, periodo, empresa_id, unidad_id, trabajador_id)
     if formato == "json":
         claves = ("horas_trabajadas", "horas_normales", "tardanza_min", "horas_extra_25", "horas_extra_35",
@@ -269,6 +391,24 @@ def consolidado_mensual(
     return Response(content=_tabla_xlsx(registros, f"Consolidado {periodo}", ventana),
                     media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     headers={"Content-Disposition": f"attachment; filename={nombre}.xlsx"})
+
+
+@router.get("/resumen-mensual")
+def resumen_mensual(
+    periodos: str = Query(..., description="YYYY-MM separados por coma (max. 24)"),
+    empresa_id: Optional[int] = None,
+    unidad_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+    user: Usuario = Depends(current_user),
+):
+    """S9 Dashboard: totales del consolidado por periodo agregados en la BD (sin cargar filas por trabajador)."""
+    import re
+    lista = [p.strip() for p in periodos.split(",") if p.strip()]
+    if not lista or len(lista) > 24 or any(not re.match(PERIODO, p) for p in lista):
+        raise HTTPException(422, "periodos: lista de 1 a 24 meses YYYY-MM")
+    unidad_id = _unidad_alcance(user, unidad_id)
+    empresa_id = empresa_alcance(user, empresa_id)
+    return {p: _totales_sql(db, _consolidado_sql(p, empresa_id, unidad_id, None), rango(p)[0]) for p in dict.fromkeys(lista)}
 
 
 @router.get("/conceptos-remunerativos")
@@ -364,10 +504,22 @@ def export_versiones(
     periodo: Optional[str] = Query(None, pattern=PERIODO),
     db: Session = Depends(get_db),
     user: Usuario = Depends(current_user),
+    pag: Optional[dict] = Depends(params_pagina),
 ):
-    """Historial de versiones exportadas (sin contenido), mas reciente primero."""
+    """Historial de versiones exportadas (sin contenido), mas reciente primero. S9: ``?page=`` pagina en la BD."""
     from ..export_pc import out
     _empresa_gestion(db, user, empresa_id)
+    E = ExportPlanilla
+    if pag is not None:
+        stmt = select(E).where(E.empresa_id == empresa_id)
+        if periodo:
+            stmt = stmt.where(E.periodo == periodo)
+        return paginar_sql(db, stmt, pag, out, escalar=True, buscar=(E.periodo, E.archivo, E.estado, E.formato, E.checksum),
+                           filtros={"estado": E.estado, "formato": E.formato},
+                           orden={"periodo": E.periodo, "version": E.version, "formato": E.formato, "estado": E.estado,
+                                  "trabajadores": E.trabajadores, "lineas": E.lineas, "generado_en": E.generado_en,
+                                  "archivo": E.archivo},
+                           orden_def=(E.periodo.desc(), E.version.desc()), desempate=(E.id.desc(),))
     q = db.query(ExportPlanilla).filter(ExportPlanilla.empresa_id == empresa_id)
     if periodo:
         q = q.filter(ExportPlanilla.periodo == periodo)

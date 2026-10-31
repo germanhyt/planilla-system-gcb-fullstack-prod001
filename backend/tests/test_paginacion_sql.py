@@ -11,7 +11,7 @@ def sin_memoria(monkeypatch):
     """Si algún listado convertido cae al respaldo en memoria del middleware, la prueba falla."""
     def boom(*a, **k):
         raise AssertionError("paginacion en memoria usada")
-    monkeypatch.setattr(pg, "paginar", boom)
+    monkeypatch.setattr(pg, "paginar", boom, raising=False)
 
 
 def _trab(client, H, codigo):

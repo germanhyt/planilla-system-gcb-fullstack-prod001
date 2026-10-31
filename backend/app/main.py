@@ -2,7 +2,6 @@ from fastapi import FastAPI
 from sqlalchemy import text
 
 from .db import engine
-from .paginacion import PaginacionMiddleware
 from .routers import (
     asignaciones,
     auditoria,
@@ -49,7 +48,6 @@ for rt in [
     app.include_router(rt)
 
 
-app.add_middleware(PaginacionMiddleware)  # S8: ?page= -> {items,total,page,page_size}
 
 
 @app.get("/health")

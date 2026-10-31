@@ -17,7 +17,7 @@ DESDE, HASTA = "2023-05-01", "2023-05-31"
 def sin_memoria(monkeypatch):
     def boom(*a, **k):
         raise AssertionError("paginacion en memoria usada")
-    monkeypatch.setattr(pg, "paginar", boom)
+    monkeypatch.setattr(pg, "paginar", boom, raising=False)
 
 
 def _t(db, codigo):
