@@ -1,6 +1,9 @@
 """Semilla ficticia y anonimizada (idempotente). Ver README: patrones derivados del Excel de referencia.
 NO contiene nombres, DNI ni sueldos reales. Uso: python seed.py [--if-empty]
---if-empty: no hace nada si ya existen usuarios (lo usa start.sh con AUTO_SEED=1 en dev)."""
+--if-empty: no hace nada si ya existen usuarios (lo usa start.sh con AUTO_SEED=1 en dev).
+--config-only: solo configuración (tipos de contrato, empresas y reglas casi reales); apta para prod (SEED_CONFIG=1).
+La semilla demo (trabajadores, marcas, usuarios demo) se niega a correr con APP_ENV=production."""
+import os
 import random
 import sys
 from datetime import date, datetime, time, timedelta
@@ -47,6 +50,13 @@ AREAS_CAVAS = [("Salón", "Mozo/a", 10), ("Bar", "Bartender", 6), ("Cocina", "Co
                ("Caja", "Cajero/a", 2), ("Seguridad", "Anfitrión/Seguridad", 2), ("Administración", "Supervisor/a", 2)]
 
 
+# RUC verificado (sprint 5) en consulta pública de padrón SUNAT: GRUPO CORDILLERA BLANCA SOCIEDAD ANONIMA, activo/habido.
+RUC_GCBSA = "20605363882"
+# CAVAS: confirmado por el PO (2026-10-30): CAVAS REUNIDAS PERU SOCIEDAD ANONIMA; el codigo corto "CAVAS" se mantiene.
+RUC_CAVAS = "20610414983"
+RAZON_CAVAS = "CAVAS REUNIDAS PERU S.A."
+
+
 def rs_vigente(db, empresa_id, dia):
     """rule_set vigente al día (si es anterior a todas las vigencias, la primera)."""
     q = select(RuleSet.id).where(RuleSet.empresa_id == empresa_id)
@@ -64,13 +74,41 @@ def get_or_create(db, model, where: dict, **extra):
 
 
 def main():
+    if os.getenv("APP_ENV", "").lower() in ("prod", "production"):
+        raise SystemExit("Semilla DEMO bloqueada: APP_ENV=production. Use --config-only.")
     db = SessionLocal()
+    tc, cav, gcb = seed_config(db, demo=True)
+    _seed_demo(db, tc, cav, gcb)
+
+
+def seed_config(db, demo: bool = False):
+    """Configuración base idempotente (sin datos personales): tipos de contrato, empresas y rule_sets.
+    No sobrescribe lo editado luego en el módulo Configuración: solo crea lo que falta; los rule_set
+    se crean únicamente si la empresa aún no tiene ninguno (prod) o si falta la vigencia (dev)."""
     tc = {c: get_or_create(db, TipoContrato, {"codigo": c}, nombre=n, horas_mes=h, jornada_diaria_min=j, es_part_time=pt,
                            refrigerio_min=45)  # PO: refrigerio 45 min también para PT85/PT102
           for c, n, h, j, pt in [("FT", "Tiempo completo", 208, 480, False), ("PT85", "Part time 85 h/mes", 85, 240, True),
                                  ("PT102", "Part time 102 h/mes", 102, 240, True)]}
-    cav = get_or_create(db, Empresa, {"codigo": "CAVAS"}, razon_social="CAVAS SAC", ruc="20000000001")
-    gcb = get_or_create(db, Empresa, {"codigo": "GCBSA"}, razon_social="GCB SA", ruc="20000000002")
+    cav = get_or_create(db, Empresa, {"codigo": "CAVAS"}, razon_social=RAZON_CAVAS, ruc=RUC_CAVAS)
+    gcb = get_or_create(db, Empresa, {"codigo": "GCBSA"}, razon_social="GCB SA", ruc=RUC_GCBSA)
+    if demo:
+        for e, cfg in ((cav, CAVAS_DEMO), (gcb, GCB_SA)):
+            get_or_create(db, RuleSet, {"empresa_id": e.id, "version": 1}, valid_from=date(2026, 1, 1), config=cfg,
+                          motivo="Demo/legado (Sprint 1)" if e is cav else "Reglas confirmadas Sprint 1")
+    elif not db.scalar(select(RuleSet.id).where(RuleSet.empresa_id == gcb.id).limit(1)):
+        db.add(RuleSet(empresa_id=gcb.id, version=1, valid_from=date(2026, 1, 1), config=GCB_SA,
+                       motivo="Semilla prod: reglas confirmadas GCB SA"))
+    # Reglas reales CAVAS (PO) vigentes desde 2026-11-01. Idempotente; crear un rule_set no recalcula nada.
+    tiene = select(RuleSet.id).where(RuleSet.empresa_id == cav.id)
+    if not db.scalar((tiene.where(RuleSet.valid_from == CAVAS_REAL_DESDE) if demo else tiene).limit(1)):
+        ver = (db.scalar(select(func.max(RuleSet.version)).where(RuleSet.empresa_id == cav.id)) or 0) + 1
+        db.add(RuleSet(empresa_id=cav.id, version=ver, valid_from=CAVAS_REAL_DESDE, config=CAVAS,
+                       motivo="Reglas reales CAVAS (PO): tolerancia 10, corte 06:00, HE pago, nocturno aparte"))
+    db.flush()
+    return tc, cav, gcb
+
+
+def _seed_demo(db, tc, cav, gcb):
     u_cav = get_or_create(db, Unidad, {"empresa_id": cav.id, "codigo": "SISA"}, nombre="Cavas Sisa")
     u_ref = get_or_create(db, Unidad, {"empresa_id": gcb.id, "codigo": "REF"}, nombre="Refugio")
     u_par = get_or_create(db, Unidad, {"empresa_id": gcb.id, "codigo": "PARK"}, nombre="Parking Explanada")
@@ -81,16 +119,6 @@ def main():
     for u, pats in ((u_cav, TURNOS_CAVAS), (u_par, TURNOS_PARKING)):
         for n, a, b, r in pats:
             get_or_create(db, TurnoPlantilla, {"unidad_id": u.id, "nombre": n}, inicio=a, fin=b, refrigerio_min=r)
-    for e, cfg in ((cav, CAVAS_DEMO), (gcb, GCB_SA)):
-        get_or_create(db, RuleSet, {"empresa_id": e.id, "version": 1}, valid_from=date(2026, 1, 1), config=cfg,
-                      motivo="Demo/legado (Sprint 1)" if e is cav else "Reglas confirmadas Sprint 1")
-    # Reglas reales CAVAS (PO) vigentes desde 2026-11-01. Idempotente por vigencia; no toca periodos cerrados
-    # (la vigencia es futura y crear un rule_set no recalcula nada).
-    if not db.scalar(select(RuleSet).where(RuleSet.empresa_id == cav.id, RuleSet.valid_from == CAVAS_REAL_DESDE)):
-        ver = (db.scalar(select(func.max(RuleSet.version)).where(RuleSet.empresa_id == cav.id)) or 0) + 1
-        db.add(RuleSet(empresa_id=cav.id, version=ver, valid_from=CAVAS_REAL_DESDE, config=CAVAS,
-                       motivo="Reglas reales CAVAS (PO): tolerancia 10, corte 06:00, HE pago, nocturno aparte"))
-        db.flush()
     pw = hash_password(settings.seed_password)
     users = {}
     for rol, unidad in (("admin", None), ("rrhh", None), ("jefe", u_cav.id), ("trabajador", None)):
@@ -315,7 +343,12 @@ def base_vacia() -> bool:
 
 
 if __name__ == "__main__":
-    if "--if-empty" in sys.argv[1:] and not base_vacia():
+    if "--config-only" in sys.argv[1:]:
+        with SessionLocal() as s:
+            seed_config(s)
+            s.commit()
+        print("Semilla de configuración aplicada (idempotente)")
+    elif "--if-empty" in sys.argv[1:] and not base_vacia():
         print("Semilla omitida: la base ya tiene datos")
     else:
         main()

@@ -40,11 +40,11 @@ def test_versionado_por_vigencia(client, H, ids):
 
 def test_vigencia_duplicada_y_config_invalida(client, H, ids):
     cav = ids["emp"]["CAVAS"]
-    assert client.post("/rule-sets", headers=H["admin"], json={"empresa_id": cav, "valid_from": "2026-01-01", "config": {}}).status_code == 409
-    bad = client.post("/rule-sets", headers=H["admin"], json={"empresa_id": cav, "valid_from": "2027-01-01",
+    assert client.post("/rule-sets", headers=H["admin"], json={"empresa_id": cav, "valid_from": "2026-01-01", "config": {}, "motivo": "dup"}).status_code == 409
+    bad = client.post("/rule-sets", headers=H["admin"], json={"empresa_id": cav, "valid_from": "2027-01-01", "motivo": "x invalida",
                                                                "config": {"tolerancia": {"modo": "inventado", "minutos": 5}}})
     assert bad.status_code == 422
-    bad2 = client.post("/rule-sets", headers=H["admin"], json={"empresa_id": cav, "valid_from": "2027-01-01",
+    bad2 = client.post("/rule-sets", headers=H["admin"], json={"empresa_id": cav, "valid_from": "2027-01-01", "motivo": "x invalida",
                                                                 "config": {"part_time": {"bloqueante": True}}})
     assert bad2.status_code == 422
 

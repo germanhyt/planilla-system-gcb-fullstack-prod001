@@ -3,7 +3,7 @@ from decimal import Decimal
 from typing import Literal, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, model_validator
 
 
 class EmpresaIn(BaseModel):
@@ -38,6 +38,14 @@ class TipoContratoIn(BaseModel):
     es_part_time: bool = False
     refrigerio_min: int = Field(45, ge=0, le=120)
     activo: bool = True
+
+    @model_validator(mode="after")
+    def _coherente(self):
+        if self.refrigerio_min >= self.jornada_diaria_min:
+            raise ValueError("refrigerio_min debe ser menor que jornada_diaria_min")
+        if self.es_part_time and self.jornada_diaria_min > 240:
+            raise ValueError("part time: jornada diaria máxima 240 min (4 h promedio)")
+        return self
 
 
 class TrabajadorIn(BaseModel):
@@ -108,7 +116,7 @@ class RuleSetIn(BaseModel):
     empresa_id: int
     valid_from: date
     config: dict
-    motivo: Optional[str] = None
+    motivo: str = Field(min_length=3, max_length=500)  # obligatorio: queda en la auditoría
 
 
 class BonoIn(BaseModel):

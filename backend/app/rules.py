@@ -3,7 +3,7 @@ import copy
 from datetime import date
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 BASE: dict = {
     "tolerancia": {"modo": "umbral_perdona", "minutos": 10},
@@ -11,7 +11,7 @@ BASE: dict = {
                       "turno_cuenta_dia_inicio": True},
     "periodo": {"tipo": "mes_calendario", "por": "dia_operativo"},
     "horas_extra": {"solo_preprogramadas": True, "destino_default": "pago",
-                    "exceso_no_programado": "bandeja_jefe", "regularizacion_auditada": True,
+                    "exceso_no_programado": "bandeja_jefe", "regularizacion_auditada": True, "pct_pago_mixto": 50,
                     "sobretasas": [{"hasta_horas": 2, "pct": 25}, {"hasta_horas": None, "pct": 35}]},
     "part_time": {"alerta_promedio_diario_horas": 4, "ventana": "semanal", "bloqueante": False},
     "nocturno": {"inicio": "22:00", "fin": "06:00", "siempre_calcular": True, "mostrar_sobretasa_separada": False},
@@ -36,9 +36,12 @@ class DiaOperativo(BaseModel):
     turno_cuenta_dia_inicio: bool = True
 
 
+HHMM = r"^([01]\d|2[0-3]):[0-5]\d$"
+
+
 class Sobretasa(BaseModel):
-    hasta_horas: Optional[float]
-    pct: float
+    hasta_horas: Optional[float] = Field(None, gt=0, le=12)
+    pct: float = Field(ge=0, le=200)
 
 
 class HorasExtra(BaseModel):
@@ -47,6 +50,19 @@ class HorasExtra(BaseModel):
     exceso_no_programado: Literal["bandeja_jefe"]
     regularizacion_auditada: bool
     sobretasas: list[Sobretasa]
+    pct_pago_mixto: float = Field(50, ge=0, le=100)  # destino mixto sin horas_pago explícitas: % a pago, resto a bolsa
+
+    @model_validator(mode="after")
+    def _tramos(self):
+        # Dos tramos (HE25 / HE35): el 1.º con tope de horas, el último abierto. Mínimos legales D.S. 007-2002-TR: 25 % y 35 %.
+        t = self.sobretasas
+        if len(t) != 2 or t[0].hasta_horas is None or t[1].hasta_horas is not None:
+            raise ValueError("sobretasas: se esperan 2 tramos; el 1.º con hasta_horas y el 2.º abierto (hasta_horas null)")
+        if t[0].pct < 25 or t[1].pct < 35:
+            raise ValueError("sobretasas: mínimo legal 25 % (1.er tramo) y 35 % (2.º tramo)")
+        if t[1].pct < t[0].pct:
+            raise ValueError("sobretasas: el 2.º tramo no puede pagar menos que el 1.º")
+        return self
 
 
 class PartTime(BaseModel):
@@ -56,10 +72,16 @@ class PartTime(BaseModel):
 
 
 class Nocturno(BaseModel):
-    inicio: str
-    fin: str
+    inicio: str = Field(pattern=HHMM)
+    fin: str = Field(pattern=HHMM)
     siempre_calcular: Literal[True]
     mostrar_sobretasa_separada: bool
+
+    @model_validator(mode="after")
+    def _ventana(self):
+        if self.inicio == self.fin:
+            raise ValueError("nocturno: inicio y fin no pueden ser iguales")
+        return self
 
 
 class Periodo(BaseModel):
@@ -93,6 +115,18 @@ def deep_merge(base: dict, over: dict) -> dict:
     out = copy.deepcopy(base)
     for k, v in (over or {}).items():
         out[k] = deep_merge(out[k], v) if isinstance(v, dict) and isinstance(out.get(k), dict) else v
+    return out
+
+
+def diff(antes: dict, despues: dict, ruta: str = "") -> list[dict]:
+    """Diferencias hoja a hoja entre dos configuraciones efectivas: [{ruta, antes, despues}]."""
+    out = []
+    for k in sorted(set(antes) | set(despues)):
+        a, d, r = antes.get(k), despues.get(k), f"{ruta}.{k}" if ruta else k
+        if isinstance(a, dict) and isinstance(d, dict):
+            out += diff(a, d, r)
+        elif a != d:
+            out.append({"ruta": r, "antes": a, "despues": d})
     return out
 
 

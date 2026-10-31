@@ -229,15 +229,16 @@ def calcular_horas_extra(
     he_programadas: float,
     sobretasas: list[dict]
 ) -> tuple[float, float]:
-    """Calcula HE 25% (primeras 2h) y 35% (resto) solo si fueron pre-programadas."""
+    """HE del 1.er tramo (hasta `sobretasas[0].hasta_horas`, 2 h por defecto) y del 2.º (resto); solo pre-programadas."""
     if he_programadas is None or he_programadas <= 0:
         return 0.0, 0.0
     
     exceso = max(0, horas_trabajadas - horas_programadas)
     he_efectivas = min(exceso, he_programadas)
     
-    he_25 = min(he_efectivas, 2.0)
-    he_35 = max(0, he_efectivas - 2.0)
+    tope = next((float(s["hasta_horas"]) for s in sobretasas if s.get("hasta_horas")), 2.0)
+    he_25 = min(he_efectivas, tope)
+    he_35 = max(0, he_efectivas - tope)
     
     return round(he_25, 2), round(he_35, 2)
 

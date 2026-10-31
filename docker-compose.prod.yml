@@ -16,6 +16,8 @@ services:
     build: {context: ./backend, args: {DEV: "0"}}          # sin dependencias de desarrollo
     environment:
       AUTO_SEED: "0"                                      # nunca semilla ficticia en prod
+      APP_ENV: "production"                               # seed.py bloquea la semilla demo
+      SEED_CONFIG: "1"                                    # reglas casi reales + tipos de contrato (idempotente)
       DATABASE_URL: "postgresql+psycopg://planilla:${DB_PASSWORD:?}@db:5432/planilla"
       JWT_SECRET: "${JWT_SECRET:?definir JWT_SECRET en .env}"
     networks: [default]

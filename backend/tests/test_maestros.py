@@ -1,6 +1,7 @@
 def test_seed_estructura(client, H):
-    emp = {e["razon_social"] for e in client.get("/empresas", headers=H["admin"]).json()}
-    assert {"CAVAS SAC", "GCB SA"} <= emp
+    emps = {e["codigo"]: e for e in client.get("/empresas", headers=H["admin"]).json()}
+    assert emps["CAVAS"]["razon_social"] == "CAVAS REUNIDAS PERU S.A." and emps["CAVAS"]["ruc"] == "20610414983"
+    assert emps["GCBSA"]["razon_social"] == "GCB SA" and emps["GCBSA"]["ruc"] == "20605363882"
     tcs = {t["codigo"]: t for t in client.get("/tipos-contrato", headers=H["admin"]).json()}
     assert tcs["PT85"]["horas_mes"] == 85 and tcs["PT102"]["horas_mes"] == 102 and tcs["FT"]["jornada_diaria_min"] == 480
     trab = client.get("/trabajadores", headers=H["rrhh"]).json()
@@ -23,7 +24,7 @@ def test_crud_sede_geocerca(client, H, ids):
 
 
 def test_tipo_contrato_configurable_y_override_jornada(client, H, ids):
-    r = client.post("/tipos-contrato", headers=H["rrhh"], json={"codigo": "PT60", "nombre": "PT 60", "horas_mes": 60,
+    r = client.post("/tipos-contrato", headers=H["admin"], json={"codigo": "PT60", "nombre": "PT 60", "horas_mes": 60,
                                                                  "jornada_diaria_min": 180, "es_part_time": True})
     assert r.status_code == 201
     t = client.post("/trabajadores", headers=H["rrhh"], json={

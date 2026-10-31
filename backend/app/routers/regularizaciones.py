@@ -138,8 +138,11 @@ def decidir_regularizacion(
                 db.add(banco_mov)
             
             elif decision.destino == "mixto":
-                # 50% a pago, 50% a compensación
-                horas_pago = decision.horas_pago if decision.horas_pago is not None else float(reg.horas_exceso) / 2
+                # Sin horas_pago explícitas: horas_extra.pct_pago_mixto del rule_set (50% por defecto)
+                from .bandeja import _reglas
+                pct = _reglas(db, trabajador.empresa_id, asistencia.dia_operativo)["horas_extra"]["pct_pago_mixto"]
+                horas_pago = (decision.horas_pago if decision.horas_pago is not None
+                              else round(float(reg.horas_exceso) * pct / 100, 2))
                 horas_comp = float(reg.horas_exceso) - horas_pago
                 
                 # Pago

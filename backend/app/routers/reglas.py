@@ -7,10 +7,11 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..audit import audit, to_dict
+from ..cierre import exigir_abierto
 from ..db import get_db
 from ..deps import require
 from ..models import Empresa, RuleSet, Usuario
-from ..rules import BASE, efectivas
+from ..rules import BASE, diff, efectivas
 from ..schemas import RuleSetIn
 
 r = APIRouter(prefix="/rule-sets", tags=["reglas"])
@@ -44,15 +45,30 @@ def obtener_vigente(empresa_id: int, fecha: date, db: Session = Depends(get_db),
             "overrides": rs.config, "efectivas": efectivas(rs.config)}
 
 
-@r.post("", status_code=201)
-def crear(body: RuleSetIn, request: Request, db: Session = Depends(get_db), u: Usuario = Depends(require("admin"))):
-    """Nueva versión (inmutable). No existe PUT/DELETE: corregir = publicar otra versión."""
+def _validar(body: RuleSetIn, db: Session) -> dict:
     if not db.get(Empresa, body.empresa_id):
         raise HTTPException(404, "Empresa no existe")
     try:
-        efectivas(body.config)
+        return efectivas(body.config)
     except ValidationError as e:
-        raise HTTPException(422, f"Configuración inválida: {e.errors(include_url=False)}") from e
+        errores = [{"campo": ".".join(map(str, x["loc"])), "error": x["msg"]} for x in e.errors(include_url=False)]
+        raise HTTPException(422, {"mensaje": "Configuración inválida", "errores": errores}) from e
+
+
+@r.post("/preview")
+def preview(body: RuleSetIn, db: Session = Depends(get_db), _: Usuario = Depends(require("admin", "rrhh"))):
+    """Valida sin guardar y compara con la versión vigente a `valid_from`."""
+    nueva = _validar(body, db)
+    actual = vigente(db, body.empresa_id, body.valid_from)
+    previa = efectivas(actual.config) if actual else {}
+    return {"efectivas": nueva, "contra_version": actual.version if actual else None, "diff": diff(previa, nueva)}
+
+
+@r.post("", status_code=201)
+def crear(body: RuleSetIn, request: Request, db: Session = Depends(get_db), u: Usuario = Depends(require("admin"))):
+    """Nueva versión (inmutable). No existe PUT/DELETE: corregir = publicar otra versión."""
+    _validar(body, db)
+    exigir_abierto(db, body.empresa_id, body.valid_from.strftime("%Y-%m"))  # no reescribir periodos cerrados
     if db.scalar(select(RuleSet).where(RuleSet.empresa_id == body.empresa_id, RuleSet.valid_from == body.valid_from)):
         raise HTTPException(409, "Ya existe una versión con esa vigencia")
     ver = (db.scalar(select(func.max(RuleSet.version)).where(RuleSet.empresa_id == body.empresa_id)) or 0) + 1
