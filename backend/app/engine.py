@@ -1,4 +1,4 @@
-"""Motor de cálculo de asistencia y horas. Sprint 2."""
+﻿"""Motor de cÃ¡lculo de asistencia y horas. Sprint 2."""
 from datetime import date, datetime, time, timedelta, timezone
 from math import asin, cos, radians, sin, sqrt
 from typing import Optional
@@ -20,7 +20,7 @@ from .models import (
 )
 
 LIMA = ZoneInfo("America/Lima")
-# Ventana máxima para buscar la salida de un turno a partir de su entrada.
+# Ventana mÃ¡xima para buscar la salida de un turno a partir de su entrada.
 MAX_TURNO = timedelta(hours=20)
 
 
@@ -32,14 +32,14 @@ def a_lima(ts: datetime) -> datetime:
 
 
 def ts_efectivo(m: Marca) -> datetime:
-    """Hora que usa el cálculo: la del dispositivo si la marca es diferida (offline), si no la del servidor."""
+    """Hora que usa el cÃ¡lculo: la del dispositivo si la marca es diferida (offline), si no la del servidor."""
     if getattr(m, "diferida", False) and m.ts_cliente is not None:
         return m.ts_cliente
     return m.ts_servidor
 
 
 def calcular_distancia(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
-    """Calcula distancia en metros usando fórmula haversine."""
+    """Calcula distancia en metros usando fÃ³rmula haversine."""
     R = 6371000
     
     lat1_rad = radians(lat1)
@@ -70,7 +70,7 @@ def minutes_to_hours(m: int) -> float:
 
 
 def get_dia_operativo(ts: datetime, corte: str) -> date:
-    """Calcula el día operativo según la hora de corte."""
+    """Calcula el dÃ­a operativo segÃºn la hora de corte."""
     corte_time = parse_time(corte)
     if ts.time() < corte_time:
         return (ts.date() - timedelta(days=1))
@@ -78,17 +78,17 @@ def get_dia_operativo(ts: datetime, corte: str) -> date:
 
 
 def get_periodo_operativo(dia_op: date, corte: str) -> str:
-    """Periodo YYYY-MM = mes calendario del día operativo (igual que cierre.py).
+    """Periodo YYYY-MM = mes calendario del dÃ­a operativo (igual que cierre.py).
 
-    El corte ya se aplicó al obtener el día operativo (get_dia_operativo): una marca
-    del 01/11 02:00 con corte 06:00 pertenece al día operativo 31/10 -> periodo 10.
-    Aplicarlo de nuevo aquí movía todo el 1.er día del mes al mes anterior.
+    El corte ya se aplicÃ³ al obtener el dÃ­a operativo (get_dia_operativo): una marca
+    del 01/11 02:00 con corte 06:00 pertenece al dÃ­a operativo 31/10 -> periodo 10.
+    Aplicarlo de nuevo aquÃ­ movÃ­a todo el 1.er dÃ­a del mes al mes anterior.
     """
     return dia_op.strftime("%Y-%m")
 
 
 def get_horario_plan_version(db: Session, trabajador_id: int, dia: date) -> Optional[HorarioPlan]:
-    """Obtiene el plan de horario vigente para el día (última versión de esa semana)."""
+    """Obtiene el plan de horario vigente para el dÃ­a (Ãºltima versiÃ³n de esa semana)."""
     from sqlalchemy import and_
     
     dia_inicio_semana = dia - timedelta(days=dia.weekday())
@@ -104,14 +104,14 @@ def get_horario_plan_version(db: Session, trabajador_id: int, dia: date) -> Opti
 
 
 def get_turno_plantilla_dia(plan: HorarioPlan, dia: date) -> Optional[int]:
-    """Devuelve el ID de la plantilla de turno para un día específico."""
+    """Devuelve el ID de la plantilla de turno para un dÃ­a especÃ­fico."""
     dias = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"]
     dia_semana = dias[dia.weekday()]
     return getattr(plan, f"{dia_semana}_plantilla_id", None)
 
 
 def get_asignacion_vigente(db: Session, trabajador_id: int, dia: date) -> Optional[HorarioAsignacion]:
-    """Asignación de horario que cubre el día (la de vigente_desde más reciente)."""
+    """AsignaciÃ³n de horario que cubre el dÃ­a (la de vigente_desde mÃ¡s reciente)."""
     return db.query(HorarioAsignacion).filter(
         HorarioAsignacion.trabajador_id == trabajador_id, HorarioAsignacion.vigente_desde <= dia,
         (HorarioAsignacion.vigente_hasta.is_(None)) | (HorarioAsignacion.vigente_hasta >= dia),
@@ -119,7 +119,7 @@ def get_asignacion_vigente(db: Session, trabajador_id: int, dia: date) -> Option
 
 
 def plantilla_de_asignacion(asig: HorarioAsignacion, dia: date) -> Optional[int]:
-    """Plantilla del día según el patrón (rotación de N semanas desde la semana de vigente_desde)."""
+    """Plantilla del dÃ­a segÃºn el patrÃ³n (rotaciÃ³n de N semanas desde la semana de vigente_desde)."""
     patron = asig.patron or []
     if not patron:
         return None
@@ -130,7 +130,7 @@ def plantilla_de_asignacion(asig: HorarioAsignacion, dia: date) -> Optional[int]
 
 
 def resolver_turno_dia(db: Session, trabajador_id: int, dia: date) -> tuple[Optional[int], str]:
-    """(plantilla_id, origen). Prioridad: plan semanal explícito > asignación vigente > sin horario."""
+    """(plantilla_id, origen). Prioridad: plan semanal explÃ­cito > asignaciÃ³n vigente > sin horario."""
     plan = get_horario_plan_version(db, trabajador_id, dia)
     if plan:
         return get_turno_plantilla_dia(plan, dia), "plan_semanal"
@@ -141,9 +141,9 @@ def resolver_turno_dia(db: Session, trabajador_id: int, dia: date) -> tuple[Opti
 
 
 def refrigerio_efectivo(db: Session, trabajador: Trabajador, plantilla: TurnoPlantilla) -> int:
-    """Refrigerio de la plantilla si está definido; si no, el del tipo de contrato (45 por defecto).
+    """Refrigerio de la plantilla si estÃ¡ definido; si no, el del tipo de contrato (45 por defecto).
 
-    Decisión PO: PT85/PT102 = 45 min (igual que FT); sigue configurable en tipo_contrato.refrigerio_min (0 = no se descuenta).
+    DecisiÃ³n PO: PT85/PT102 = 45 min (igual que FT); sigue configurable en tipo_contrato.refrigerio_min (0 = no se descuenta).
     """
     if plantilla.refrigerio_min is not None:
         return plantilla.refrigerio_min
@@ -152,7 +152,7 @@ def refrigerio_efectivo(db: Session, trabajador: Trabajador, plantilla: TurnoPla
 
 
 def he_programadas_dia(db: Session, trabajador_id: int, dia: date) -> float:
-    """HE preautorizadas (programadas por el jefe) vigentes para el día operativo; 0 si no hay."""
+    """HE preautorizadas (programadas por el jefe) vigentes para el dÃ­a operativo; 0 si no hay."""
     h = db.query(HEProgramada).filter(HEProgramada.trabajador_id == trabajador_id, HEProgramada.dia == dia,
                                       HEProgramada.estado == "vigente").first()
     return float(h.horas) if h else 0.0
@@ -176,7 +176,7 @@ def get_rule_set_vigente(db: Session, empresa_id: int, dia: date) -> RuleSet:
 
 
 def calcular_tardanza(entrada_ts: datetime, turno_inicio: time, tolerancia_config: dict) -> int:
-    """Calcula minutos de tardanza según el modo de tolerancia."""
+    """Calcula minutos de tardanza segÃºn el modo de tolerancia."""
     entrada_time = entrada_ts.time()
     entrada_min = time_to_minutes(entrada_time)
     inicio_min = time_to_minutes(turno_inicio)
@@ -229,7 +229,7 @@ def calcular_horas_extra(
     he_programadas: float,
     sobretasas: list[dict]
 ) -> tuple[float, float]:
-    """HE del 1.er tramo (hasta `sobretasas[0].hasta_horas`, 2 h por defecto) y del 2.º (resto); solo pre-programadas."""
+    """HE del 1.er tramo (hasta `sobretasas[0].hasta_horas`, 2 h por defecto) y del 2.Âº (resto); solo pre-programadas."""
     if he_programadas is None or he_programadas <= 0:
         return 0.0, 0.0
     
@@ -250,12 +250,12 @@ def calcular_asistencia_dia(
     reglas: dict,
     he_programadas: Optional[float] = None,
 ) -> Optional[dict]:
-    """Motor de cálculo diario. Retorna dict con los campos calculados o None si no hay marcas.
+    """Motor de cÃ¡lculo diario. Retorna dict con los campos calculados o None si no hay marcas.
 
-    - La entrada se busca en la ventana del día operativo [dia+corte, dia+1+corte) hora Lima.
+    - La entrada se busca en la ventana del dÃ­a operativo [dia+corte, dia+1+corte) hora Lima.
     - La salida es la primera posterior a la entrada dentro de MAX_TURNO (turnos que cruzan el corte).
     - Las marcas diferidas (offline) se calculan con la hora del dispositivo.
-    - he_programadas: HE preautorizadas del día. None = se leen de `he_programada` (programación del jefe).
+    - he_programadas: HE preautorizadas del dÃ­a. None = se leen de `he_programada` (programaciÃ³n del jefe).
     """
     from sqlalchemy import and_
     
@@ -349,8 +349,8 @@ def recalcular_trabajador_periodo(db: Session, trabajador_id: int, periodo: str)
 
     Idempotente y seguro con regularizaciones ya decididas: las asistencias se actualizan en
     sitio (no se borran si tienen regularizaciones aprobadas/rechazadas -> sin error de FK) y
-    las decisiones del jefe se conservan; sólo las pendientes se regeneran. Devuelve False si
-    el periodo está cerrado o el trabajador no existe.
+    las decisiones del jefe se conservan; sÃ³lo las pendientes se regeneran. Devuelve False si
+    el periodo estÃ¡ cerrado o el trabajador no existe.
     """
     from .cierre import esta_cerrado
     from .rules import efectivas
@@ -370,7 +370,7 @@ def recalcular_trabajador_periodo(db: Session, trabajador_id: int, periodo: str)
     existentes = {a.dia_operativo: a for a in db.query(Asistencia).filter(
         Asistencia.trabajador_id == trabajador_id, Asistencia.periodo == periodo)}
     ids = [a.id for a in existentes.values()] or [-1]
-    # Sólo se regeneran las pendientes; las decididas se conservan (y su asistencia también).
+    # SÃ³lo se regeneran las pendientes; las decididas se conservan (y su asistencia tambiÃ©n).
     db.query(RegularizacionHE).filter(RegularizacionHE.estado == "pendiente",
                                       RegularizacionHE.asistencia_id.in_(ids)).delete(synchronize_session=False)
     decididas = {r.asistencia_id for r in db.query(RegularizacionHE.asistencia_id).filter(
@@ -413,13 +413,20 @@ def recalcular_trabajador_periodo(db: Session, trabajador_id: int, periodo: str)
                 db.add(RegularizacionHE(asistencia_id=asistencia.id, trabajador_id=trabajador_id,
                                         horas_exceso=resultado["exceso_no_programado"]))
         elif asistencia is not None:
-            existentes[dia_actual] = asistencia  # se evalúa abajo
+            existentes[dia_actual] = asistencia  # se evalÃºa abajo
         dia_actual += timedelta(days=1)
 
-    # Días que ya no generan asistencia: se borran salvo que tengan decisiones (se conservan).
+    # DÃ­as que ya no generan asistencia: se borran salvo que tengan decisiones (se conservan).
+    from .alertas import asistencia_sin_marcas, resolver
     for a in existentes.values():
         if a.id not in decididas:
             db.delete(a)
+        else:  # Sprint 7: se conserva por la decision, pero perdio sus marcas -> alerta a RRHH
+            asistencia_sin_marcas(db, trabajador, a)
+    for a in db.query(Asistencia).filter(Asistencia.trabajador_id == trabajador_id, Asistencia.periodo == periodo,
+                                         Asistencia.id.in_(list(decididas) or [-1])):
+        if a.dia_operativo not in existentes:
+            resolver(db, f"sin_marcas:{a.id}")
     db.commit()
     return True
 
@@ -433,7 +440,7 @@ def _periodos_entre(desde: date, hasta: date) -> list[str]:
 
 
 def recalcular_rango(db: Session, trabajador_id: int, desde: date, hasta: Optional[date] = None) -> list[str]:
-    """Disparo de recálculo tras cambios de HE programadas u horarios: recalcula los periodos
+    """Disparo de recÃ¡lculo tras cambios de HE programadas u horarios: recalcula los periodos
     abiertos afectados, sin pasar del mes actual. Devuelve los periodos recalculados."""
     hoy = date.today()
     hasta = min(hasta or hoy, hoy)

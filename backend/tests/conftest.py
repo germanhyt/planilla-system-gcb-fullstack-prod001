@@ -8,6 +8,7 @@ from sqlalchemy.engine import make_url
 _base = make_url(os.environ.get("DATABASE_URL", "postgresql+psycopg://planilla:planilla@localhost:5432/planilla"))
 TEST_URL = os.environ.get("TEST_DATABASE_URL") or _base.set(database=f"{_base.database}_test").render_as_string(hide_password=False)
 os.environ["DATABASE_URL"] = TEST_URL
+os.environ.setdefault("JOBS_MODO", "inline")  # S7: sin Redis en tests, los trabajos corren en linea
 _t = make_url(TEST_URL)
 with psycopg.connect(host=_t.host, port=_t.port or 5432, user=_t.username, password=_t.password, dbname="postgres",
                      autocommit=True) as c:

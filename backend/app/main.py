@@ -15,10 +15,12 @@ from .routers import (
     justificaciones,
     maestros,
     marcas,
+    notificaciones,
     periodos,
     reglas,
     regularizaciones,
     reportes,
+    trabajos,
 )
 
 app = FastAPI(title="Sistema de Planillas GCB", version="0.3.0-sprint3")
@@ -40,6 +42,8 @@ for rt in [
     banco_horas.router,
     bandeja.router,
     bandeja.banco,
+    trabajos.router,
+    notificaciones.router,
 ]:
     app.include_router(rt)
 

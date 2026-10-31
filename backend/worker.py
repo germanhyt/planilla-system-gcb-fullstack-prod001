@@ -5,6 +5,7 @@ from rq import Queue, Worker
 from app.config import settings
 from app.db import SessionLocal
 from app.engine import recalcular_trabajador_periodo
+from app.trabajos import ejecutar  # noqa: F401  (S7: jobs encolados como "app.trabajos.ejecutar")
 
 
 def job_recalcular(trabajador_id: int, periodo: str):
