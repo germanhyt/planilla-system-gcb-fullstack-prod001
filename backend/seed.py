@@ -12,6 +12,7 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from zoneinfo import ZoneInfo
 
+from app.audit import audit
 from app.config import settings
 from app.db import SessionLocal
 from app.models import (
@@ -31,7 +32,7 @@ from app.models import (
     Unidad,
     Usuario,
 )
-from app.rules import CAVAS, CAVAS_DEMO, CAVAS_REAL_DESDE, GCB_SA
+from app.rules import CAVAS, CAVAS_DEMO, CAVAS_REAL_DESDE, GCB_SA, GCB_SA_V2_DESDE, GCB_SA_V2_MOTIVO, config_v2
 from app.security import hash_password
 
 rnd = random.Random(2026)
@@ -108,7 +109,26 @@ def seed_config(db, demo: bool = False):
         db.add(RuleSet(empresa_id=cav.id, version=ver, valid_from=CAVAS_REAL_DESDE, config=CAVAS,
                        motivo="Reglas reales CAVAS (PO): tolerancia 10, corte 06:00, HE pago, nocturno aparte"))
     db.flush()
+    publicar_gcb_v2(db, gcb.id)
     return tc, cav, gcb
+
+
+def publicar_gcb_v2(db, empresa_id):
+    """GCB SA: nueva version de rule_set (HE programadas -> compensacion) vigente desde 2026-11-01. Idempotente y
+    auditada; parte de la config vigente a esa fecha (no pisa ediciones). Misma logica que la migracion 9d2e4f6a8b10."""
+    rss = db.query(RuleSet).filter(RuleSet.empresa_id == empresa_id).all()
+    if any(r.motivo == GCB_SA_V2_MOTIVO or r.valid_from == GCB_SA_V2_DESDE for r in rss):
+        return None
+    base = max((r for r in rss if r.valid_from <= GCB_SA_V2_DESDE), key=lambda r: r.valid_from, default=None)
+    if base is None:
+        return None
+    rs = RuleSet(empresa_id=empresa_id, version=max(r.version for r in rss) + 1, valid_from=GCB_SA_V2_DESDE,
+                 config=config_v2(base.config), motivo=GCB_SA_V2_MOTIVO)
+    db.add(rs)
+    db.flush()
+    audit(db, None, "crear", "rule_set", rs.id, {"base_rule_set_id": base.id, "base_version": base.version},
+          {"version": rs.version, "valid_from": rs.valid_from.isoformat(), "motivo": rs.motivo, "origen": "seed"})
+    return rs
 
 
 def _seed_demo(db, tc, cav, gcb):

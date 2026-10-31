@@ -17,6 +17,15 @@ from sqlalchemy.orm import Session
 from .models import Notificacion, Trabajador
 
 DIAS_AVISO_CIERRE = 5
+TIPO_DIARIO = "alertas_diarias"
+LOCK_DIARIO = 770700
+
+
+def hoy_lima() -> date:
+    from zoneinfo import ZoneInfo
+
+    from .config import settings
+    return datetime.now(timezone.utc).astimezone(ZoneInfo(settings.tz)).date()
 GENERADAS = ("pendientes_cierre", "pt_riesgo", "bonos_sin_aprobar")
 
 
@@ -56,7 +65,7 @@ def generar(db: Session, empresa_id: int, periodo: str, hoy: Optional[date] = No
     from .routers.bandeja import alertas_pt
     from .routers.reportes import rango
 
-    hoy = hoy or datetime.now(timezone.utc).date()
+    hoy = hoy or hoy_lima()
     desde, hasta = rango(periodo)
     chk = checklist(db, empresa_id, periodo)
     vigentes: set[str] = set()
@@ -96,3 +105,45 @@ def generar(db: Session, empresa_id: int, periodo: str, hoy: Optional[date] = No
     for n in activas:
         out[n.tipo] = out.get(n.tipo, 0) + 1
     return out
+
+
+def _periodo_anterior(p: str) -> str:
+    y, m = int(p[:4]), int(p[5:])
+    return f"{y - 1}-12" if m == 1 else f"{y}-{m - 1:02d}"
+
+
+def evaluar_diario(db: Session, ahora: Optional[datetime] = None) -> Optional[dict]:
+    """Evaluacion automatica diaria (programador del worker, a partir de settings.alertas_hora Lima).
+    Una sola corrida por dia (registro Trabajo tipo 'alertas_diarias' + advisory lock en Postgres); generar() es
+    idempotente por clave, asi que ni la corrida manual ni una repeticion duplican alertas.
+    Evalua el periodo actual y el anterior (si sigue abierto) de todas las empresas. None = no tocaba/ya corrio."""
+    from sqlalchemy import text
+    from zoneinfo import ZoneInfo
+
+    from .cierre import checklist
+    from .config import settings
+    from .models import Empresa, Trabajo
+    lima = ZoneInfo(settings.tz)
+    ahora = (ahora or datetime.now(timezone.utc)).astimezone(lima)
+    hh, mm = (int(x) for x in settings.alertas_hora.split(":"))
+    if (ahora.hour, ahora.minute) < (hh, mm):
+        return None
+    fecha = ahora.date().isoformat()
+    if db.get_bind().dialect.name == "postgresql":
+        db.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": LOCK_DIARIO})
+    previos = db.query(Trabajo).filter(Trabajo.tipo == TIPO_DIARIO).order_by(Trabajo.id.desc()).limit(20).all()
+    if any((t.parametros or {}).get("fecha") == fecha for t in previos):
+        db.rollback()
+        return None
+    actual = fecha[:7]
+    res: dict = {}
+    for e in db.query(Empresa).order_by(Empresa.id):
+        per = [actual]
+        ant = _periodo_anterior(actual)
+        if not checklist(db, e.id, ant)["cerrado"]:
+            per.append(ant)
+        res[e.codigo] = {p: generar(db, e.id, p, ahora.date()) for p in per}
+    db.add(Trabajo(tipo=TIPO_DIARIO, estado="ok", progreso=len(res), total=len(res), parametros={"fecha": fecha},
+                   resultado=res, terminado_en=datetime.now(timezone.utc)))
+    db.commit()
+    return res

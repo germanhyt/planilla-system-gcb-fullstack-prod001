@@ -1,4 +1,4 @@
-﻿"""Motor de cÃ¡lculo de asistencia y horas. Sprint 2."""
+"""Motor de cÃ¡lculo de asistencia y horas. Sprint 2."""
 from datetime import date, datetime, time, timedelta, timezone
 from math import asin, cos, radians, sin, sqrt
 from typing import Optional
@@ -420,6 +420,9 @@ def recalcular_trabajador_periodo(db: Session, trabajador_id: int, periodo: str)
     from .alertas import asistencia_sin_marcas, resolver
     for a in existentes.values():
         if a.id not in decididas:
+            from .models import BancoHorasCompensatorias
+            db.query(BancoHorasCompensatorias).filter(BancoHorasCompensatorias.asistencia_id == a.id) \
+                .update({"asistencia_id": None}, synchronize_session=False)  # el banco conserva el movimiento
             db.delete(a)
         else:  # Sprint 7: se conserva por la decision, pero perdio sus marcas -> alerta a RRHH
             asistencia_sin_marcas(db, trabajador, a)

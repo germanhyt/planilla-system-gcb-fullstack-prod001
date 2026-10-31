@@ -152,5 +152,16 @@ CAVAS = {"tolerancia": {"modo": "umbral_perdona", "minutos": 10},
 # umbral_perdona, HE por defecto a compensacion (banco de horas), nocturnas calculadas sin recargo separado.
 GCB_SA = {"tolerancia": {"modo": "umbral_perdona", "minutos": 10},
           "dia_operativo": {"tipo": "calendario", "corte": "00:00", "turno_cuenta_dia_inicio": True},
-          "horas_extra": {"destino_default": "compensacion", "destino_programadas": "compensacion"},
+          "horas_extra": {"destino_default": "compensacion"},
           "nocturno": {"mostrar_sobretasa_separada": False}}
+# GCB SA v2 (PO pt54u/pt57u): las HE PRE-PROGRAMADAS van a compensacion (banco). Se publica como NUEVA version de
+# rule_set vigente desde GCB_SA_V2_DESDE (los rule_set son inmutables; la v1 queda tal cual para lo ya calculado).
+GCB_SA_V2_DESDE = date(2026, 11, 1)
+GCB_SA_V2_MOTIVO = "PO pt57u: HE programadas GCB SA a compensacion (banco de horas)"
+GCB_SA_V2 = {**GCB_SA, "horas_extra": {**GCB_SA["horas_extra"], "destino_programadas": "compensacion"}}
+
+
+def config_v2(base: dict) -> dict:
+    """Config vigente + destino_programadas=compensacion (sin tocar el resto de lo editado en Configuracion)."""
+    he = base.get("horas_extra") if isinstance(base.get("horas_extra"), dict) else {}
+    return {**base, "horas_extra": {**he, "destino_programadas": "compensacion"}}
