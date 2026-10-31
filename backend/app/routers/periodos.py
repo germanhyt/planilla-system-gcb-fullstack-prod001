@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from ..alcance import empresa_alcance
 from ..audit import audit
+from ..banco import acreditar_he_programadas
 from ..cierre import checklist
 from ..db import get_db
 from ..deps import current_user
@@ -82,9 +83,10 @@ def cerrar_periodo(data: CierrePeriodoIn, request: Request, db: Session = Depend
         db.add(cierre)
     _marcar_asistencias(db, data.empresa_id, data.periodo, True)
     db.flush()
+    acreditadas = acreditar_he_programadas(db, data.empresa_id, data.periodo)
     audit(db, user.id, "cerrar_periodo", "cierre_periodo", cierre.id, antes,
           {"periodo": data.periodo, "empresa_id": data.empresa_id, "confirmado_con_pendientes": bool(chk["total_pendientes"]),
-           "pendientes": chk["conteos"]}, _ip(request))
+           "pendientes": chk["conteos"], "he_programadas_al_banco": acreditadas}, _ip(request))
     db.commit()
     db.refresh(cierre)
     return _out(cierre) | {"pendientes": chk["conteos"]}

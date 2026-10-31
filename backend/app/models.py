@@ -234,6 +234,7 @@ class Asistencia(Base):
     horas_extra_35: Mapped[float] = mapped_column(Numeric(5, 2), default=0)
     horas_nocturnas: Mapped[float] = mapped_column(Numeric(5, 2), default=0)
     exceso_no_programado: Mapped[float] = mapped_column(Numeric(5, 2), default=0)
+    horas_extra_banco: Mapped[float] = mapped_column(Numeric(5, 2), default=0)  # HE programadas a compensacion
     rule_set_id: Mapped[int] = mapped_column(ForeignKey("rule_set.id"))
     periodo_cerrado: Mapped[bool] = mapped_column(Boolean, default=False)
     calculado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

@@ -319,6 +319,9 @@ def calcular_asistencia_dia(
     he_25, he_35 = calcular_horas_extra(horas_trabajadas, horas_programadas, he_programadas, reglas["horas_extra"]["sobretasas"])
     
     exceso_no_prog = round(max(0, horas_trabajadas - horas_programadas - he_25 - he_35), 2)
+    he_banco = 0.0
+    if reglas["horas_extra"].get("destino_programadas", "pago") == "compensacion":
+        he_banco, he_25, he_35 = round(he_25 + he_35, 2), 0.0, 0.0  # van al banco (se acreditan al cerrar)
     
     return {
         "trabajador_id": trabajador_id,
@@ -333,6 +336,7 @@ def calcular_asistencia_dia(
         "horas_extra_programadas": he_programadas,
         "horas_extra_25": he_25,
         "horas_extra_35": he_35,
+        "horas_extra_banco": he_banco,
         "horas_nocturnas": horas_nocturnas,
         "exceso_no_programado": exceso_no_prog,
         "rule_set_id": rule_set.id,
