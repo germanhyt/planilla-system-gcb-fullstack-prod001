@@ -67,6 +67,20 @@ def generar_alertas(periodo: str = Query(..., pattern=PERIODO), empresa_id: Opti
     return {"periodo": periodo, "activas_por_empresa": res}
 
 
+@router.post("/leer-todas")
+def leer_todas(empresa_id: Optional[int] = None, db: Session = Depends(get_db), user: Usuario = Depends(current_user)):
+    """S8: marca como leidas todas las notificaciones activas no leidas del alcance."""
+    _gestor(user)
+    ahora = datetime.now(timezone.utc)
+    ns = _q(db, user, empresa_id).filter(Notificacion.activa.is_(True), Notificacion.leida_en.is_(None)).all()
+    for n in ns:
+        n.leida_por, n.leida_en = user.id, ahora
+    if ns:
+        audit(db, user.id, "leer_todas", "notificacion", None, None, {"cantidad": len(ns), "empresa_id": empresa_id})
+    db.commit()
+    return {"marcadas": len(ns)}
+
+
 @router.post("/{nid}/leida")
 def marcar_leida(nid: int, db: Session = Depends(get_db), user: Usuario = Depends(current_user)):
     _gestor(user)
