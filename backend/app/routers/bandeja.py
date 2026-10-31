@@ -10,10 +10,11 @@ from datetime import date, timedelta
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import false, func, select, true
+from sqlalchemy import and_, false, func, select, true
 from sqlalchemy.orm import Session
 from zoneinfo import ZoneInfo
 
+from ..alcance import filtro_empresa
 from ..db import get_db
 from ..deps import current_user
 from ..models import (
@@ -38,15 +39,15 @@ TIPOS = ("he_no_programada", "tardanza", "fuera_geocerca", "marca_diferida", "pt
 GESTORES = ("jefe", "rrhh", "admin")
 
 
-def _alcance(db: Session, u: Usuario, unidad_id: Optional[int]):
+def _alcance(db: Session, u: Usuario, unidad_id: Optional[int], empresa_id: Optional[int] = None):
     """Filtro de trabajadores según rol: jefe sólo su unidad; RRHH/admin todo (o la unidad pedida)."""
     if u.rol not in GESTORES:
         raise HTTPException(403, "No autorizado")
     if u.rol == "jefe":
         if not u.unidad_id:
             raise HTTPException(403, "Jefe sin unidad asignada")
-        return Trabajador.unidad_id == u.unidad_id
-    return Trabajador.unidad_id == unidad_id if unidad_id else true()
+        return and_(Trabajador.unidad_id == u.unidad_id, filtro_empresa(u, empresa_id))
+    return and_(Trabajador.unidad_id == unidad_id if unidad_id else true(), filtro_empresa(u, empresa_id))
 
 
 def _reglas(db: Session, empresa_id: int, dia: date) -> dict:
@@ -99,11 +100,12 @@ def bandeja(
     tipo: Optional[Literal["he_no_programada", "tardanza", "fuera_geocerca", "marca_diferida", "pt_alerta"]] = None,
     estado: Optional[Literal["pendiente", "aprobado", "rechazado", "informativo"]] = None,
     unidad_id: Optional[int] = None,
+    empresa_id: Optional[int] = None,
     db: Session = Depends(get_db),
     u: Usuario = Depends(current_user),
 ):
     """Bandeja unificada de excepciones. Jefe: su unidad. RRHH/admin: todas. Trabajador: 403."""
-    filtro = _alcance(db, u, unidad_id)
+    filtro = _alcance(db, u, unidad_id, empresa_id)
     if hasta < desde:
         raise HTTPException(400, "Rango inválido")
     items: list[dict] = []
@@ -193,13 +195,13 @@ def _saldo(db: Session, trabajador_id: int) -> float:
 
 
 @banco.get("/saldos")
-def saldos(unidad_id: Optional[int] = None, solo_con_movimientos: bool = False, db: Session = Depends(get_db),
+def saldos(unidad_id: Optional[int] = None, empresa_id: Optional[int] = None, solo_con_movimientos: bool = False, db: Session = Depends(get_db),
            u: Usuario = Depends(current_user)):
     """Saldo de la bolsa de horas por trabajador. Trabajador: sólo el suyo; jefe: su unidad; RRHH/admin: todos."""
     if u.rol == "trabajador":
         filtro = Trabajador.usuario_id == u.id
     else:
-        filtro = _alcance(db, u, unidad_id)
+        filtro = _alcance(db, u, unidad_id, empresa_id)
     trabs = db.scalars(select(Trabajador).where(filtro, Trabajador.activo).order_by(Trabajador.codigo)).all()
     hoy = date.today()
     out = []

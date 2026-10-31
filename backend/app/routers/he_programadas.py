@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from ..alcance import filtro_empresa, fuera_de_alcance
 from ..audit import audit, to_dict
 from ..cierre import exigir_abierto_trabajador
 from ..db import get_db
@@ -40,7 +41,7 @@ def _out(h: HEProgramada, t: Optional[Trabajador] = None) -> dict:
 
 
 def _alcance(u: Usuario, t: Trabajador) -> None:
-    if u.rol == "jefe" and t.unidad_id != u.unidad_id:
+    if fuera_de_alcance(u, t):
         raise HTTPException(403, "Solo puede programar trabajadores de su unidad")
     if u.rol == "trabajador" and t.usuario_id != u.id:
         raise HTTPException(403, "Solo puede ver sus propias horas extra programadas")
@@ -61,6 +62,7 @@ def listar(desde: date = Query(...), hasta: date = Query(...), trabajador_id: Op
         q = q.filter(Trabajador.unidad_id == u.unidad_id)
     elif u.rol == "trabajador":
         q = q.filter(Trabajador.usuario_id == u.id)
+    q = q.filter(filtro_empresa(u))
     return [_out(h, t) for h, t in q.order_by(HEProgramada.dia, Trabajador.codigo).limit(1000)]
 
 

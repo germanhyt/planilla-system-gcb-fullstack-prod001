@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from ..alcance import fuera_de_alcance
 from ..audit import audit
 from ..cierre import exigir_abierto_trabajador
 from ..db import get_db
@@ -34,7 +35,7 @@ def _trab(db: Session, u: Usuario, trabajador_id: int, escritura: bool) -> Traba
     t = db.get(Trabajador, trabajador_id)
     if not t:
         raise HTTPException(404, "Trabajador no encontrado")
-    if u.rol == "jefe" and t.unidad_id != u.unidad_id:
+    if fuera_de_alcance(u, t):
         raise HTTPException(403, "Solo puede asignar horarios a trabajadores de su unidad")
     if u.rol == "trabajador" and (escritura or t.usuario_id != u.id):
         raise HTTPException(403, "Sin permiso")

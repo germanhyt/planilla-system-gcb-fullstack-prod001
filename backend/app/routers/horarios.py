@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
+from ..alcance import fuera_de_alcance
 from ..audit import audit
 from ..db import get_db
 from ..deps import require
@@ -67,7 +68,7 @@ def crear_horario(plan_in: HorarioPlanIn, db: Session = Depends(get_db), u: Usua
     if not trabajador:
         raise HTTPException(404, "Trabajador no encontrado")
     
-    if u.rol == "jefe" and trabajador.unidad_id != u.unidad_id:
+    if fuera_de_alcance(u, trabajador):
         raise HTTPException(403, "Solo puede programar trabajadores de su unidad")
     
     semana_inicio = plan_in.semana_inicio
@@ -121,7 +122,7 @@ def listar_horarios(trabajador_id: int, db: Session = Depends(get_db), u: Usuari
     if u.rol == "trabajador" and trabajador.usuario_id != u.id:
         raise HTTPException(403, "Solo puede ver sus propios horarios")
     
-    if u.rol == "jefe" and trabajador.unidad_id != u.unidad_id:
+    if fuera_de_alcance(u, trabajador):
         raise HTTPException(403, "Solo puede ver trabajadores de su unidad")
     
     planes = db.query(HorarioPlan).filter(
@@ -137,7 +138,7 @@ def copiar_semana_anterior(trabajador_id: int, semana_inicio: date, db: Session 
     if not trabajador:
         raise HTTPException(404, "Trabajador no encontrado")
     
-    if u.rol == "jefe" and trabajador.unidad_id != u.unidad_id:
+    if fuera_de_alcance(u, trabajador):
         raise HTTPException(403, "Solo puede programar trabajadores de su unidad")
     
     semana_anterior = semana_inicio - timedelta(days=7)

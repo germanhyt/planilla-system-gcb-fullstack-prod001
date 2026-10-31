@@ -2,9 +2,10 @@
 from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import and_, func
+from sqlalchemy import and_, func, select
 from sqlalchemy.orm import Session
 
+from ..alcance import filtro_empresa
 from ..db import get_db
 from ..deps import current_user
 from ..engine import resolver_turno_dia
@@ -18,6 +19,7 @@ router = APIRouter(prefix="/excepciones", tags=["excepciones"])
 def listar_faltas_sin_justificar(
     periodo: str = Query(..., pattern=r"^\d{4}-(0[1-9]|1[0-2])$"),
     unidad_id: int | None = None,
+    empresa_id: int | None = None,
     incluir_justificadas: bool = False,
     db: Session = Depends(get_db),
     user: Usuario = Depends(current_user),
@@ -42,7 +44,8 @@ def listar_faltas_sin_justificar(
         query = query.filter(Trabajador.unidad_id == user.unidad_id)
     elif unidad_id:
         query = query.filter(Trabajador.unidad_id == unidad_id)
-    
+    query = query.filter(filtro_empresa(user, empresa_id))
+
     trabajadores = query.all()
     faltas = []
     
@@ -81,6 +84,7 @@ def listar_tardanzas_recurrentes(
     periodo: str = Query(..., pattern=r"^\d{4}-(0[1-9]|1[0-2])$"),
     min_tardanzas: int = Query(3, ge=1),
     unidad_id: int | None = None,
+    empresa_id: int | None = None,
     db: Session = Depends(get_db),
     user: Usuario = Depends(current_user),
 ):
@@ -108,6 +112,7 @@ def listar_tardanzas_recurrentes(
         query = query.join(Trabajador).filter(Trabajador.unidad_id == user.unidad_id)
     elif unidad_id:
         query = query.join(Trabajador).filter(Trabajador.unidad_id == unidad_id)
+    query = query.filter(Asistencia.trabajador_id.in_(select(Trabajador.id).where(filtro_empresa(user, empresa_id))))
     
     resultados = query.all()
     
@@ -132,6 +137,7 @@ def listar_marcas_fuera_geocerca(
     desde: date = Query(...),
     hasta: date = Query(...),
     unidad_id: int | None = None,
+    empresa_id: int | None = None,
     db: Session = Depends(get_db),
     user: Usuario = Depends(current_user),
 ):
@@ -144,8 +150,8 @@ def listar_marcas_fuera_geocerca(
         and_(
             Marca.ts_servidor >= desde,
             Marca.ts_servidor < hasta + timedelta(days=1),
-            Marca.distancia_m.isnot(None),
-            Marca.distancia_m > 200  # Umbral configurable
+            # El radio es por sede (marcas.validar_geocerca); no se repite un umbral fijo aqui
+            Marca.validacion_estado == "fuera_geocerca"
         )
     )
     
@@ -155,7 +161,8 @@ def listar_marcas_fuera_geocerca(
         query = query.filter(Trabajador.unidad_id == user.unidad_id)
     elif unidad_id:
         query = query.filter(Trabajador.unidad_id == unidad_id)
-    
+    query = query.filter(filtro_empresa(user, empresa_id))
+
     marcas = query.order_by(Marca.ts_servidor.desc()).limit(200).all()
     
     resultado = []
@@ -181,6 +188,7 @@ def listar_marcas_fuera_geocerca(
 @router.get("/part-time-riesgo")
 def reporte_part_time_riesgo(
     periodo: str = Query(..., pattern=r"^\d{4}-(0[1-9]|1[0-2])$"),
+    empresa_id: int | None = None,
     db: Session = Depends(get_db),
     user: Usuario = Depends(current_user),
 ):
@@ -191,8 +199,6 @@ def reporte_part_time_riesgo(
     """
     if user.rol not in ("rrhh", "admin"):
         raise HTTPException(403, "No autorizado")
-    from sqlalchemy import true
-
     from .bandeja import alertas_pt
 
     anio, mes = map(int, periodo.split("-"))
@@ -211,7 +217,7 @@ def reporte_part_time_riesgo(
         "criterio": "horas_semana / dias_trabajados",
         "bloqueante": False,
         "tipo_contrato": a["contrato"],
-    } for a in sorted(alertas_pt(db, true(), desde, hasta), key=lambda x: (x["semana"], x["trabajador"].codigo))]
+    } for a in sorted(alertas_pt(db, filtro_empresa(user, empresa_id), desde, hasta), key=lambda x: (x["semana"], x["trabajador"].codigo))]
 
 
 @router.post("/justificar-falta")

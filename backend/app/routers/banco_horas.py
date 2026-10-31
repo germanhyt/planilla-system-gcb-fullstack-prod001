@@ -1,11 +1,13 @@
 """Sprint 3: Consultas de banco de horas compensatorias."""
 from datetime import date, timedelta
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import and_
+from sqlalchemy import and_, select
 from sqlalchemy.orm import Session
 
+from ..alcance import filtro_empresa, fuera_de_alcance
 from ..db import get_db
 from ..deps import current_user
 from ..models import BancoHorasCompensatorias, Trabajador, Usuario
@@ -82,9 +84,9 @@ def consultar_saldo(
         if not mi_trab or mi_trab.id != trabajador_id:
             raise HTTPException(403, "Solo puede ver su propio saldo")
     
-    if user.rol == "jefe":
+    if user.rol != "trabajador":
         trab = db.query(Trabajador).filter(Trabajador.id == trabajador_id).first()
-        if not trab or trab.unidad_id != user.unidad_id:
+        if (not trab and user.rol == "jefe") or (trab and fuera_de_alcance(user, trab)):
             raise HTTPException(403, "Solo puede ver trabajadores de su unidad")
     
     # Obtener último movimiento para saldo actual
@@ -112,9 +114,9 @@ def consultar_historial(
         if not mi_trab or mi_trab.id != trabajador_id:
             raise HTTPException(403, "Solo puede ver su propio historial")
     
-    if user.rol == "jefe":
+    if user.rol != "trabajador":
         trab = db.query(Trabajador).filter(Trabajador.id == trabajador_id).first()
-        if not trab or trab.unidad_id != user.unidad_id:
+        if (not trab and user.rol == "jefe") or (trab and fuera_de_alcance(user, trab)):
             raise HTTPException(403, "Solo puede ver trabajadores de su unidad")
     
     movimientos = db.query(BancoHorasCompensatorias).filter(
@@ -143,6 +145,7 @@ def consultar_historial(
 @router.get("/expiraciones")
 def proximas_expiraciones(
     dias_alerta: int = Query(15, ge=1, le=90),
+    empresa_id: Optional[int] = None,
     db: Session = Depends(get_db),
     user: Usuario = Depends(current_user),
 ):
@@ -161,7 +164,8 @@ def proximas_expiraciones(
             BancoHorasCompensatorias.tipo == "credito",
             BancoHorasCompensatorias.fecha_expira.isnot(None),
             BancoHorasCompensatorias.fecha_expira <= fecha_limite,
-            BancoHorasCompensatorias.fecha_expira >= hoy
+            BancoHorasCompensatorias.fecha_expira >= hoy,
+            BancoHorasCompensatorias.trabajador_id.in_(select(Trabajador.id).where(filtro_empresa(user, empresa_id))),
         )
     ).order_by(BancoHorasCompensatorias.fecha_expira).all()
     
@@ -193,9 +197,9 @@ def registrar_descanso(
     if user.rol not in ("jefe", "rrhh", "admin"):
         raise HTTPException(403, "No autorizado")
     
-    if user.rol == "jefe":
+    if user.rol != "trabajador":
         trab = db.query(Trabajador).filter(Trabajador.id == data.trabajador_id).first()
-        if not trab or trab.unidad_id != user.unidad_id:
+        if (not trab and user.rol == "jefe") or (trab and fuera_de_alcance(user, trab)):
             raise HTTPException(403, "Solo puede registrar descansos de su unidad")
     from ..cierre import exigir_abierto_trabajador
     exigir_abierto_trabajador(db, data.trabajador_id, data.fecha.strftime("%Y-%m"))

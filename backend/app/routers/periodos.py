@@ -11,6 +11,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
+from ..alcance import empresa_alcance
 from ..audit import audit
 from ..cierre import checklist
 from ..db import get_db
@@ -48,6 +49,7 @@ def _out(c: CierrePeriodo) -> dict:
 def ver_checklist(empresa_id: int = Query(...), periodo: str = Query(..., pattern=PERIODO),
                   db: Session = Depends(get_db), user: Usuario = Depends(current_user)):
     _gestor(user)
+    empresa_alcance(user, empresa_id)
     if not db.get(Empresa, empresa_id):
         raise HTTPException(404, "Empresa no encontrada")
     out = checklist(db, empresa_id, periodo)
@@ -61,6 +63,7 @@ def cerrar_periodo(data: CierrePeriodoIn, request: Request, db: Session = Depend
                    user: Usuario = Depends(current_user)):
     """Cierra el mes operativo de una empresa. Con pendientes exige confirmación explícita."""
     _gestor(user)
+    empresa_alcance(user, data.empresa_id)
     if not db.get(Empresa, data.empresa_id):
         raise HTTPException(404, "Empresa no encontrada")
     cierre = db.query(CierrePeriodo).filter(CierrePeriodo.empresa_id == data.empresa_id,
@@ -96,6 +99,7 @@ def reabrir_periodo(cierre_id: int, data: ReaperturaPeriodoIn, request: Request,
     cierre = db.get(CierrePeriodo, cierre_id)
     if not cierre:
         raise HTTPException(404, "Cierre no encontrado")
+    empresa_alcance(user, cierre.empresa_id)
     if cierre.estado != "cerrado":
         raise HTTPException(400, "El periodo ya está reabierto")
     antes = _out(cierre)
@@ -115,6 +119,7 @@ def historial_cierres(empresa_id: Optional[int] = None, db: Session = Depends(ge
                       user: Usuario = Depends(current_user)):
     """Estado actual de cierres por empresa+periodo (el detalle de cada cierre/reapertura está en auditoría)."""
     _gestor(user)
+    empresa_id = empresa_alcance(user, empresa_id)
     q = db.query(CierrePeriodo)
     if empresa_id:
         q = q.filter(CierrePeriodo.empresa_id == empresa_id)
@@ -129,6 +134,7 @@ def recalcular(empresa_id: int = Query(...), periodo: str = Query(..., pattern=P
     from ..cierre import exigir_abierto
     from ..engine import recalcular_trabajador_periodo
     _gestor(user)
+    empresa_alcance(user, empresa_id)
     if not db.get(Empresa, empresa_id):
         raise HTTPException(404, "Empresa no encontrada")
     exigir_abierto(db, empresa_id, periodo)

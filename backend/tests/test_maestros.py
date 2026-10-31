@@ -1,7 +1,7 @@
 def test_seed_estructura(client, H):
     emps = {e["codigo"]: e for e in client.get("/empresas", headers=H["admin"]).json()}
     assert emps["CAVAS"]["razon_social"] == "CAVAS REUNIDAS PERU S.A." and emps["CAVAS"]["ruc"] == "20610414983"
-    assert emps["GCBSA"]["razon_social"] == "GCB SA" and emps["GCBSA"]["ruc"] == "20605363882"
+    assert emps["GCBSA"]["razon_social"] == "GRUPO CORDILLERA BLANCA S.A." and emps["GCBSA"]["ruc"] == "20605363882"
     tcs = {t["codigo"]: t for t in client.get("/tipos-contrato", headers=H["admin"]).json()}
     assert tcs["PT85"]["horas_mes"] == 85 and tcs["PT102"]["horas_mes"] == 102 and tcs["FT"]["jornada_diaria_min"] == 480
     trab = client.get("/trabajadores", headers=H["rrhh"]).json()

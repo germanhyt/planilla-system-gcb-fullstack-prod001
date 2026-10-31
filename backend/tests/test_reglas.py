@@ -1,5 +1,5 @@
 def _vig(client, H, emp, fecha):
-    return client.get("/rule-sets/vigente", headers=H["jefe"], params={"empresa_id": emp, "fecha": fecha})
+    return client.get("/rule-sets/vigente", headers=H["rrhh"], params={"empresa_id": emp, "fecha": fecha})
 
 
 def test_reglas_confirmadas_cavas(client, H, ids):

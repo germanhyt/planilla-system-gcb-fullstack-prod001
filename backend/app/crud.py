@@ -31,11 +31,24 @@ def crud_router(model, prefix: str, entidad: str, create_schema: type[BaseModel]
             db.rollback()
             raise HTTPException(409, f"Conflicto de datos: {e.orig.__class__.__name__}") from e
 
+    def _flush_en_alcance(db, obj, u):
+        """Escritura fuera del alcance del usuario (p.ej. otra empresa) -> 403 sin persistir."""
+        try:
+            db.flush()
+        except IntegrityError as e:
+            db.rollback()
+            raise HTTPException(409, f"Conflicto de datos: {e.orig.__class__.__name__}") from e
+        if scope and db.scalar(scope(select(model).where(model.id == obj.id), u)) is None:
+            db.rollback()
+            raise HTTPException(403, f"{entidad} fuera de su alcance")
+
     @r.get("")
-    def listar(incluir_inactivos: bool = False, db: Session = Depends(get_db), u: Usuario = Depends(require(*read_roles))):
+    def listar(incluir_inactivos: bool = False, empresa_id: Optional[int] = None, db: Session = Depends(get_db), u: Usuario = Depends(require(*read_roles))):
         q = select(model).order_by(model.id)
         if not incluir_inactivos:
             q = q.where(model.activo.is_(True))
+        if empresa_id is not None and hasattr(model, "empresa_id"):
+            q = q.where(model.empresa_id == empresa_id)
         if scope:
             q = scope(q, u)
         return [to_dict(o) for o in db.scalars(q)]
@@ -48,6 +61,7 @@ def crud_router(model, prefix: str, entidad: str, create_schema: type[BaseModel]
     def crear(body: create_schema, request: Request, db: Session = Depends(get_db), u: Usuario = Depends(require(*write_roles))):
         obj = model(**body.model_dump())
         db.add(obj)
+        _flush_en_alcance(db, obj, u)
         _commit(db)
         audit(db, u.id, "crear", entidad, obj.id, None, to_dict(obj), request.client.host if request.client else None)
         db.commit()
@@ -60,6 +74,7 @@ def crud_router(model, prefix: str, entidad: str, create_schema: type[BaseModel]
         antes = to_dict(obj)
         for k, v in body.model_dump().items():
             setattr(obj, k, v)
+        _flush_en_alcance(db, obj, u)
         audit(db, u.id, "actualizar", entidad, obj.id, antes, to_dict(obj), request.client.host if request.client else None)
         _commit(db)
         return to_dict(obj)

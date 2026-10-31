@@ -46,7 +46,9 @@ def _login(client, email):
 def H(client):
     """Cabeceras por rol."""
     return {rol: _login(client, f"{rol}@demo.gcb.pe") for rol in ("admin", "rrhh", "jefe", "trabajador")} | {
-        "jefe_parking": _login(client, "jefe.parking@demo.gcb.pe")}
+        "jefe_parking": _login(client, "jefe.parking@demo.gcb.pe"),
+        "jefe_refugio": _login(client, "jefe.refugio@demo.gcb.pe"),
+        "rrhh_gcb": _login(client, "rrhh.gcb@demo.gcb.pe")}
 
 
 @pytest.fixture(scope="session")

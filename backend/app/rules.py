@@ -145,5 +145,10 @@ CAVAS_REAL_DESDE = date(2026, 11, 1)
 CAVAS = {"tolerancia": {"modo": "umbral_perdona", "minutos": 10},
          "dia_operativo": {"tipo": "operativo", "inicio": "08:00", "fin": "03:00", "corte": "06:00"},
          "horas_extra": {"destino_default": "pago"}, "nocturno": {"mostrar_sobretasa_separada": True}}
-GCB_SA = {"dia_operativo": {"tipo": "calendario", "turno_cuenta_dia_inicio": True},
-          "horas_extra": {"destino_default": "compensacion"}}
+# GCB SA (GRUPO CORDILLERA BLANCA S.A.) - explicito aunque coincida con BASE en varios puntos (Sprint 6):
+# dia calendario (corte 00:00, un turno que cruza medianoche cuenta en el dia de inicio), tolerancia 10 min
+# umbral_perdona, HE por defecto a compensacion (banco de horas), nocturnas calculadas sin recargo separado.
+GCB_SA = {"tolerancia": {"modo": "umbral_perdona", "minutos": 10},
+          "dia_operativo": {"tipo": "calendario", "corte": "00:00", "turno_cuenta_dia_inicio": True},
+          "horas_extra": {"destino_default": "compensacion"},
+          "nocturno": {"mostrar_sobretasa_separada": False}}

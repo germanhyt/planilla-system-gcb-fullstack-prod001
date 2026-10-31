@@ -19,6 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from ..alcance import empresa_alcance
 from ..audit import audit
 from ..db import get_db
 from ..deps import current_user
@@ -213,6 +214,7 @@ def consolidado_mensual(
 ):
     """Consolidado mensual por trabajador (pantalla Reportes) con descarga CSV/XLSX."""
     unidad_id = _unidad_alcance(user, unidad_id)
+    empresa_id = empresa_alcance(user, empresa_id)
     registros = _consolidado_mensual_data(db, periodo, empresa_id, unidad_id, trabajador_id)
     if formato == "json":
         claves = ("horas_trabajadas", "horas_normales", "tardanza_min", "horas_extra_25", "horas_extra_35",
@@ -249,6 +251,7 @@ def conceptos_remunerativos(
     """Conceptos remunerativos por trabajador (HE 25/35, bono 3 AM aparte, recargo nocturno según empresa)."""
     if user.rol not in ("rrhh", "admin"):
         raise HTTPException(403, "No autorizado")
+    empresa_alcance(user, empresa_id)
     empresa = db.get(Empresa, empresa_id)
     if not empresa:
         raise HTTPException(404, "Empresa no encontrada")
@@ -298,6 +301,7 @@ def export_planilla_core(
     """
     if user.rol not in ("rrhh", "admin"):
         raise HTTPException(403, "No autorizado")
+    empresa_alcance(user, empresa_id)
     empresa = db.get(Empresa, empresa_id)
     if not empresa:
         raise HTTPException(404, "Empresa no encontrada")

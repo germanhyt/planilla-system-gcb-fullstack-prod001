@@ -65,7 +65,7 @@ def test_publicar_version_auditada(client, H, ids):
     assert r.status_code == 201 and r.json()["motivo"] == "split mixto 60/40"
     aud = client.get("/auditoria", headers=H["admin"], params={"entidad": "rule_set"}).json()
     assert any(a["entidad_id"] == str(r.json()["id"]) for a in aud)
-    v = client.get("/rule-sets/vigente", headers=H["jefe"], params={"empresa_id": gcb, "fecha": "2028-02-01"}).json()
+    v = client.get("/rule-sets/vigente", headers=H["rrhh"], params={"empresa_id": gcb, "fecha": "2028-02-01"}).json()
     assert v["efectivas"]["horas_extra"]["pct_pago_mixto"] == 60
 
 
