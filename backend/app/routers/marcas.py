@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from zoneinfo import ZoneInfo
 
+from ..alcance import filtro_empresa, fuera_de_alcance
 from ..audit import audit
 from ..cierre import exigir_abierto_ts
 from ..db import get_db
@@ -163,7 +164,7 @@ def registrar_marca_manual(
     if not trabajador:
         raise HTTPException(404, "Trabajador no encontrado")
     
-    if u.rol == "jefe" and trabajador.unidad_id != u.unidad_id:
+    if fuera_de_alcance(u, trabajador):
         raise HTTPException(403, "Solo puede marcar trabajadores de su unidad")
     exigir_abierto_ts(db, trabajador, marca_in.ts_servidor)
 
@@ -210,7 +211,7 @@ def listar_marcas(
         if not mi_trabajador or mi_trabajador.id != trabajador_id:
             raise HTTPException(403, "Solo puede ver sus propias marcas")
     
-    if u.rol == "jefe" and trabajador.unidad_id != u.unidad_id:
+    if fuera_de_alcance(u, trabajador):
         raise HTTPException(403, "Solo puede ver trabajadores de su unidad")
     
     query = db.query(Marca).filter(Marca.trabajador_id == trabajador_id)
@@ -341,7 +342,7 @@ def mis_marcas(desde: Optional[str] = None, hasta: Optional[str] = None, db: Ses
 @r.get("/")
 def marcas_por_trabajador_fecha(desde: Optional[str] = None, hasta: Optional[str] = None,
                                 trabajador_id: Optional[int] = None, unidad_id: Optional[int] = None,
-                                db: Session = Depends(get_db), u: Usuario = Depends(require("jefe", "rrhh", "admin"))):
+                                empresa_id: Optional[int] = None, db: Session = Depends(get_db), u: Usuario = Depends(require("jefe", "rrhh", "admin"))):
     """Marcas por trabajador/fecha. Jefe: solo su unidad. RRHH/admin: todo."""
     if u.rol == "jefe":
         if not u.unidad_id:
@@ -349,14 +350,14 @@ def marcas_por_trabajador_fecha(desde: Optional[str] = None, hasta: Optional[str
         if unidad_id is not None and unidad_id != u.unidad_id:
             raise HTTPException(403, "Solo puede ver trabajadores de su unidad")
         unidad_id = u.unidad_id
-    q = db.query(Trabajador)
+    q = db.query(Trabajador).filter(filtro_empresa(u, empresa_id))
     if unidad_id is not None:
         q = q.filter(Trabajador.unidad_id == unidad_id)
     if trabajador_id is not None:
         t = db.get(Trabajador, trabajador_id)
         if not t:
             raise HTTPException(404, "Trabajador no encontrado")
-        if u.rol == "jefe" and t.unidad_id != u.unidad_id:
+        if fuera_de_alcance(u, t):
             raise HTTPException(403, "Solo puede ver trabajadores de su unidad")
         q = q.filter(Trabajador.id == trabajador_id)
     trabajadores = {t.id: t for t in q.all()}

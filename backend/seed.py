@@ -46,12 +46,15 @@ TURNOS_CAVAS = [("Noche 19-02", time(19), time(2), 0), ("Noche 18-02", time(18),
                 ("Partido FT 14-23", time(14), time(23), 45)]
 TURNOS_PARKING = [("Rotativo 06-14", time(6), time(14), 45), ("Rotativo 14-22", time(14), time(22), 45),
                   ("Rotativo 22-06", time(22), time(6), 45)]
+# Refugio (GCB SA, Sprint 6): turno de dia y turno de cierre que cruza medianoche (cuenta en el dia de inicio)
+TURNOS_REFUGIO = [("Refugio Dia 08-16", time(8), time(16), 45), ("Refugio Cierre 17-01", time(17), time(1), 45)]
 AREAS_CAVAS = [("Salón", "Mozo/a", 10), ("Bar", "Bartender", 6), ("Cocina", "Cocinero/a", 7), ("Cocina", "Ayudante de cocina", 3),
                ("Caja", "Cajero/a", 2), ("Seguridad", "Anfitrión/Seguridad", 2), ("Administración", "Supervisor/a", 2)]
 
 
 # RUC verificado (sprint 5) en consulta pública de padrón SUNAT: GRUPO CORDILLERA BLANCA SOCIEDAD ANONIMA, activo/habido.
 RUC_GCBSA = "20605363882"
+RAZON_GCBSA = "GRUPO CORDILLERA BLANCA S.A."
 # CAVAS: confirmado por el PO (2026-10-30): CAVAS REUNIDAS PERU SOCIEDAD ANONIMA; el codigo corto "CAVAS" se mantiene.
 RUC_CAVAS = "20610414983"
 RAZON_CAVAS = "CAVAS REUNIDAS PERU S.A."
@@ -90,7 +93,7 @@ def seed_config(db, demo: bool = False):
           for c, n, h, j, pt in [("FT", "Tiempo completo", 208, 480, False), ("PT85", "Part time 85 h/mes", 85, 240, True),
                                  ("PT102", "Part time 102 h/mes", 102, 240, True)]}
     cav = get_or_create(db, Empresa, {"codigo": "CAVAS"}, razon_social=RAZON_CAVAS, ruc=RUC_CAVAS)
-    gcb = get_or_create(db, Empresa, {"codigo": "GCBSA"}, razon_social="GCB SA", ruc=RUC_GCBSA)
+    gcb = get_or_create(db, Empresa, {"codigo": "GCBSA"}, razon_social=RAZON_GCBSA, ruc=RUC_GCBSA)
     if demo:
         for e, cfg in ((cav, CAVAS_DEMO), (gcb, GCB_SA)):
             get_or_create(db, RuleSet, {"empresa_id": e.id, "version": 1}, valid_from=date(2026, 1, 1), config=cfg,
@@ -114,9 +117,9 @@ def _seed_demo(db, tc, cav, gcb):
     u_par = get_or_create(db, Unidad, {"empresa_id": gcb.id, "codigo": "PARK"}, nombre="Parking Explanada")
     # Coordenadas ficticias (zona Huaraz), geocerca 80-150 m
     s_cav = get_or_create(db, Sede, {"unidad_id": u_cav.id, "nombre": "Local Sisa"}, lat=-9.527000, lng=-77.528000, radio_geocerca_m=100)
-    get_or_create(db, Sede, {"unidad_id": u_ref.id, "nombre": "Refugio Principal"}, lat=-9.530500, lng=-77.531000, radio_geocerca_m=150)
+    s_ref = get_or_create(db, Sede, {"unidad_id": u_ref.id, "nombre": "Refugio Principal"}, lat=-9.530500, lng=-77.531000, radio_geocerca_m=150)
     s_par = get_or_create(db, Sede, {"unidad_id": u_par.id, "nombre": "Explanada"}, lat=-9.525200, lng=-77.526800, radio_geocerca_m=80)
-    for u, pats in ((u_cav, TURNOS_CAVAS), (u_par, TURNOS_PARKING)):
+    for u, pats in ((u_cav, TURNOS_CAVAS), (u_par, TURNOS_PARKING), (u_ref, TURNOS_REFUGIO)):
         for n, a, b, r in pats:
             get_or_create(db, TurnoPlantilla, {"unidad_id": u.id, "nombre": n}, inicio=a, fin=b, refrigerio_min=r)
     pw = hash_password(settings.seed_password)
@@ -143,6 +146,24 @@ def _seed_demo(db, tc, cav, gcb):
                       doc_tipo="FICT", doc_numero=f"Y{i:07d}", nombres=rnd.choice(NOMBRES), apellidos=rnd.choice(APELLIDOS),
                       area="Operaciones", cargo="Controlador/a de parking", tipo_contrato_id=tc["FT"].id,
                       fecha_ingreso=date(2025, 6, 1))
+    # Refugio (GCB SA, Sprint 6): usuarios con alcance GCB y 6 personas anonimizadas (sin usar rnd: no altera la semilla)
+    j_ref = get_or_create(db, Usuario, {"email": "jefe.refugio@demo.gcb.pe"}, password_hash=pw, rol="jefe",
+                          nombre="Jefe Refugio demo", unidad_id=u_ref.id, empresa_id=gcb.id)
+    get_or_create(db, Usuario, {"email": "rrhh.gcb@demo.gcb.pe"}, password_hash=pw, rol="rrhh",
+                  nombre="RRHH GCB SA demo", empresa_id=gcb.id)
+    t_ref = {t.nombre: t for t in db.scalars(select(TurnoPlantilla).where(TurnoPlantilla.unidad_id == u_ref.id))}
+    sem = date.today() - timedelta(days=date.today().weekday())
+    for i in range(1, 7):
+        n += 1
+        tr = get_or_create(db, Trabajador, {"codigo": f"REF-{i:03d}"}, empresa_id=gcb.id, unidad_id=u_ref.id,
+                           sede_id=s_ref.id, doc_tipo="FICT", doc_numero=f"Z{i:07d}", nombres=NOMBRES[i % len(NOMBRES)],
+                           apellidos=APELLIDOS[(i * 3) % len(APELLIDOS)], area="Restaurante",
+                           cargo="Mozo/a" if i <= 3 else "Cocinero/a", tipo_contrato_id=tc["FT"].id,
+                           fecha_ingreso=date(2025, 3, 1), jefe_usuario_id=j_ref.id)
+        tp = t_ref["Refugio Dia 08-16" if i <= 3 else "Refugio Cierre 17-01"].id
+        get_or_create(db, HorarioPlan, {"trabajador_id": tr.id, "semana_inicio": sem, "version": 1},
+                      lunes_plantilla_id=tp, martes_plantilla_id=tp, miercoles_plantilla_id=tp, jueves_plantilla_id=tp,
+                      viernes_plantilla_id=tp, sabado_plantilla_id=tp, domingo_plantilla_id=None, creado_por=j_ref.id)
     
     # Sprint 3: Agregar horarios semanales de muestra para trabajadores
     trabajadores = db.scalars(select(Trabajador).where(Trabajador.activo).limit(10)).all()

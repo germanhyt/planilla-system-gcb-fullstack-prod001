@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from ..alcance import filtro_empresa, fuera_de_alcance
 from ..audit import audit
 from ..cierre import exigir_abierto
 from ..db import get_db
@@ -28,7 +29,8 @@ def listar_pendientes(db: Session = Depends(get_db), u: Usuario = Depends(curren
         if not u.unidad_id:
             raise HTTPException(403, "Jefe sin unidad asignada")
         query = query.filter(Trabajador.unidad_id == u.unidad_id)
-    
+    query = query.filter(filtro_empresa(u))
+
     regs = query.order_by(RegularizacionHE.creado_en.desc()).limit(100).all()
     
     resultado = []
@@ -72,7 +74,7 @@ def decidir_regularizacion(
         raise HTTPException(400, "La regularización ya fue procesada")
     
     trabajador = db.query(Trabajador).get(reg.trabajador_id)
-    if u.rol == "jefe" and trabajador.unidad_id != u.unidad_id:
+    if fuera_de_alcance(u, trabajador):
         raise HTTPException(403, "Solo puede regularizar trabajadores de su unidad")
     asi_lock = db.get(Asistencia, reg.asistencia_id)
     exigir_abierto(db, trabajador.empresa_id,
@@ -211,7 +213,7 @@ def listar_por_trabajador(
         if not mi_trabajador or mi_trabajador.id != trabajador_id:
             raise HTTPException(403, "Solo puede ver sus propias regularizaciones")
     
-    if u.rol == "jefe" and trabajador.unidad_id != u.unidad_id:
+    if fuera_de_alcance(u, trabajador):
         raise HTTPException(403, "Solo puede ver trabajadores de su unidad")
     
     regs = db.query(RegularizacionHE).filter(

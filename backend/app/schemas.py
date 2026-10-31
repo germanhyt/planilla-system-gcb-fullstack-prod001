@@ -91,13 +91,19 @@ class UsuarioIn(BaseModel):
     rol: Rol
     nombre: str
     unidad_id: Optional[int] = None
+    empresa_id: Optional[int] = None
 
 
 class UsuarioUpd(BaseModel):
     rol: Optional[Rol] = None
     activo: Optional[bool] = None
     unidad_id: Optional[int] = None
+    empresa_id: Optional[int] = None
     nombre: Optional[str] = None
+
+
+class UsuarioEmpresaIn(BaseModel):
+    empresa_id: Optional[int] = None  # null = usuario global (sin empresa fija)
 
 
 class PerfilUpd(BaseModel):

@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ..alcance import empresa_alcance
 from ..audit import audit, to_dict
 from ..cierre import esta_cerrado, exigir_abierto
 from ..db import get_db
@@ -38,7 +39,8 @@ def _out(db: Session, b: BonoNocturno, t: Optional[Trabajador] = None, nombres: 
 
 @r.get("")
 def listar(periodo: Optional[str] = None, empresa_id: Optional[int] = None, estado: Optional[str] = None,
-           db: Session = Depends(get_db), _: Usuario = Depends(require("rrhh", "admin"))):
+           db: Session = Depends(get_db), u: Usuario = Depends(require("rrhh", "admin"))):
+    empresa_id = empresa_alcance(u, empresa_id)
     q = select(BonoNocturno, Trabajador).join(Trabajador, Trabajador.id == BonoNocturno.trabajador_id) \
         .order_by(Trabajador.codigo, BonoNocturno.id)
     if periodo:

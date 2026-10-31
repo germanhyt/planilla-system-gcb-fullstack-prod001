@@ -10,7 +10,7 @@ BASE: dict = {
     "dia_operativo": {"tipo": "calendario", "inicio": "00:00", "fin": "24:00", "corte": "00:00",
                       "turno_cuenta_dia_inicio": True},
     "periodo": {"tipo": "mes_calendario", "por": "dia_operativo"},
-    "horas_extra": {"solo_preprogramadas": True, "destino_default": "pago",
+    "horas_extra": {"solo_preprogramadas": True, "destino_default": "pago", "destino_programadas": "pago",
                     "exceso_no_programado": "bandeja_jefe", "regularizacion_auditada": True, "pct_pago_mixto": 50,
                     "sobretasas": [{"hasta_horas": 2, "pct": 25}, {"hasta_horas": None, "pct": 35}]},
     "part_time": {"alerta_promedio_diario_horas": 4, "ventana": "semanal", "bloqueante": False},
@@ -47,6 +47,8 @@ class Sobretasa(BaseModel):
 class HorasExtra(BaseModel):
     solo_preprogramadas: bool
     destino_default: Literal["pago", "compensacion", "mixto"]
+    # HE pre-programadas: pago (HE25/HE35) o compensacion (banco de horas, acreditado al cerrar el periodo). PO pt54u.
+    destino_programadas: Literal["pago", "compensacion"] = "pago"
     exceso_no_programado: Literal["bandeja_jefe"]
     regularizacion_auditada: bool
     sobretasas: list[Sobretasa]
@@ -145,5 +147,10 @@ CAVAS_REAL_DESDE = date(2026, 11, 1)
 CAVAS = {"tolerancia": {"modo": "umbral_perdona", "minutos": 10},
          "dia_operativo": {"tipo": "operativo", "inicio": "08:00", "fin": "03:00", "corte": "06:00"},
          "horas_extra": {"destino_default": "pago"}, "nocturno": {"mostrar_sobretasa_separada": True}}
-GCB_SA = {"dia_operativo": {"tipo": "calendario", "turno_cuenta_dia_inicio": True},
-          "horas_extra": {"destino_default": "compensacion"}}
+# GCB SA (GRUPO CORDILLERA BLANCA S.A.) - explicito aunque coincida con BASE en varios puntos (Sprint 6):
+# dia calendario (corte 00:00, un turno que cruza medianoche cuenta en el dia de inicio), tolerancia 10 min
+# umbral_perdona, HE por defecto a compensacion (banco de horas), nocturnas calculadas sin recargo separado.
+GCB_SA = {"tolerancia": {"modo": "umbral_perdona", "minutos": 10},
+          "dia_operativo": {"tipo": "calendario", "corte": "00:00", "turno_cuenta_dia_inicio": True},
+          "horas_extra": {"destino_default": "compensacion", "destino_programadas": "compensacion"},
+          "nocturno": {"mostrar_sobretasa_separada": False}}

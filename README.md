@@ -148,3 +148,13 @@ $C exec api pytest -v            # usa planilla_test (aislada)
 Dev normal (bridge): `docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build` (api :8000, web :8080).
 Prod (futuro): `docker-compose.prod.yml` une `web` a la red de nginx_proxy con `VIRTUAL_HOST`/`LETSENCRYPT_HOST`; el compose base no publica puertos.
 Nueva migración: `$C run --rm -v $PWD/backend:/app api alembic revision --autogenerate -m "..."`.
+
+## Sprint 6 - GCB SA (GRUPO CORDILLERA BLANCA S.A.) y multiempresa
+
+- **Reglas GCB SA** (hereda BASE/CAVAS): dia calendario (sin corte 06:00; el turno cuenta en el dia de inicio), HE sin destino -> compensacion (banco de horas),
+  horas nocturnas calculadas sin sobretasa separada (sin RNOC en export), tolerancia por umbral de 10 min.
+- **Alcance multiempresa** (`backend/app/alcance.py`): `usuario.empresa_id` (migracion `f2a3b4c5d678`). Usuario con empresa o jefe (hereda la empresa de su unidad)
+  solo ve datos de su empresa (403/404 en lo demas). Admin/RRHH global filtran con `?empresa_id=`.
+- **Demo (solo seed dev)**: `rrhh.gcb@demo.gcb.pe`, `jefe.refugio@demo.gcb.pe`, trabajadores ficticios `REF-001..006` (turnos 08-16 y 17-01).
+  En un volumen ya sembrado ejecutar `docker compose ... exec api python seed.py` (idempotente).
+- **Golden tests**: `backend/tests/test_engine_golden_gcbsa.py`; E2E: `e2e/tests/gcbsa.spec.ts`.

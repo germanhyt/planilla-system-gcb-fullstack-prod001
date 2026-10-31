@@ -99,7 +99,7 @@ def test_marcas_fuera_geocerca(client, H, ids, db):
         lat=-12.1,
         lng=-77.0,
         distancia_m=500,
-        validacion_estado="ok",
+        validacion_estado="fuera_geocerca",
         metodo="gps"
     )
     db.add(marca)

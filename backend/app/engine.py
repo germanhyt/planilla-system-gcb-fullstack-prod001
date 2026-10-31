@@ -319,6 +319,9 @@ def calcular_asistencia_dia(
     he_25, he_35 = calcular_horas_extra(horas_trabajadas, horas_programadas, he_programadas, reglas["horas_extra"]["sobretasas"])
     
     exceso_no_prog = round(max(0, horas_trabajadas - horas_programadas - he_25 - he_35), 2)
+    he_banco = 0.0
+    if reglas["horas_extra"].get("destino_programadas", "pago") == "compensacion":
+        he_banco, he_25, he_35 = round(he_25 + he_35, 2), 0.0, 0.0  # van al banco (se acreditan al cerrar)
     
     return {
         "trabajador_id": trabajador_id,
@@ -333,6 +336,7 @@ def calcular_asistencia_dia(
         "horas_extra_programadas": he_programadas,
         "horas_extra_25": he_25,
         "horas_extra_35": he_35,
+        "horas_extra_banco": he_banco,
         "horas_nocturnas": horas_nocturnas,
         "exceso_no_programado": exceso_no_prog,
         "rule_set_id": rule_set.id,
@@ -372,16 +376,29 @@ def recalcular_trabajador_periodo(db: Session, trabajador_id: int, periodo: str)
     decididas = {r.asistencia_id for r in db.query(RegularizacionHE.asistencia_id).filter(
         RegularizacionHE.asistencia_id.in_(ids))}
 
-    try:
-        rule_set = get_rule_set_vigente(db, trabajador.empresa_id, fecha_inicio)
-    except ValueError:
+    # Reglas resueltas POR DIA: un rule_set nuevo a mitad de mes rige desde su valid_from (Sprint 6).
+    versiones = db.query(RuleSet).filter(RuleSet.empresa_id == trabajador.empresa_id,
+                                         RuleSet.valid_from < fecha_fin).order_by(RuleSet.valid_from).all()
+    if not versiones:
         db.rollback()
         return False  # sin reglas vigentes (p. ej. antes del go-live): no hay nada que calcular
-    reglas = efectivas(rule_set.config)
+    cache: dict[int, dict] = {}
+
+    def reglas_dia(d: date) -> Optional[dict]:
+        rs = None
+        for v in versiones:
+            if v.valid_from <= d:
+                rs = v
+        if rs is None:
+            return None
+        if rs.id not in cache:
+            cache[rs.id] = efectivas(rs.config)
+        return cache[rs.id]
 
     dia_actual = fecha_inicio
     while dia_actual < fecha_fin:
-        resultado = calcular_asistencia_dia(db, trabajador_id, dia_actual, reglas)
+        reglas = reglas_dia(dia_actual)
+        resultado = calcular_asistencia_dia(db, trabajador_id, dia_actual, reglas) if reglas else None
         asistencia = existentes.pop(dia_actual, None)
         if resultado:
             if asistencia is None:

@@ -71,6 +71,8 @@ class Usuario(Base):
     zona_horaria: Mapped[str] = mapped_column(String(50), default="America/Lima")
     # Alcance del jefe (unidad que supervisa)
     unidad_id: Mapped[Optional[int]] = mapped_column(ForeignKey("unidad.id"))
+    # Sprint 6: empresa fija del usuario (null = todas; solo admin/RRHH corporativo)
+    empresa_id: Mapped[Optional[int]] = mapped_column(ForeignKey("empresa.id"), index=True)
     creado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     ultimo_login: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
@@ -232,6 +234,7 @@ class Asistencia(Base):
     horas_extra_35: Mapped[float] = mapped_column(Numeric(5, 2), default=0)
     horas_nocturnas: Mapped[float] = mapped_column(Numeric(5, 2), default=0)
     exceso_no_programado: Mapped[float] = mapped_column(Numeric(5, 2), default=0)
+    horas_extra_banco: Mapped[float] = mapped_column(Numeric(5, 2), default=0)  # HE programadas a compensacion
     rule_set_id: Mapped[int] = mapped_column(ForeignKey("rule_set.id"))
     periodo_cerrado: Mapped[bool] = mapped_column(Boolean, default=False)
     calculado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

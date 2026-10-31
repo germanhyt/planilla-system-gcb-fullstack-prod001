@@ -6,6 +6,7 @@ from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from ..alcance import empresa_alcance
 from ..audit import audit, to_dict
 from ..cierre import exigir_abierto
 from ..db import get_db
@@ -29,7 +30,8 @@ def base(_: Usuario = Depends(require(*LECTURA))):
 
 
 @r.get("")
-def listar(empresa_id: Optional[int] = None, db: Session = Depends(get_db), _: Usuario = Depends(require(*LECTURA))):
+def listar(empresa_id: Optional[int] = None, db: Session = Depends(get_db), u: Usuario = Depends(require(*LECTURA))):
+    empresa_id = empresa_alcance(u, empresa_id)
     q = select(RuleSet).order_by(RuleSet.empresa_id, RuleSet.version)
     if empresa_id:
         q = q.where(RuleSet.empresa_id == empresa_id)
@@ -37,7 +39,8 @@ def listar(empresa_id: Optional[int] = None, db: Session = Depends(get_db), _: U
 
 
 @r.get("/vigente")
-def obtener_vigente(empresa_id: int, fecha: date, db: Session = Depends(get_db), _: Usuario = Depends(require(*LECTURA))):
+def obtener_vigente(empresa_id: int, fecha: date, db: Session = Depends(get_db), u: Usuario = Depends(require(*LECTURA))):
+    empresa_alcance(u, empresa_id)
     rs = vigente(db, empresa_id, fecha)
     if not rs:
         raise HTTPException(404, "Sin reglas vigentes para esa fecha")

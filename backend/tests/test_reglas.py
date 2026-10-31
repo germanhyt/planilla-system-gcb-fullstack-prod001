@@ -1,5 +1,5 @@
 def _vig(client, H, emp, fecha):
-    return client.get("/rule-sets/vigente", headers=H["jefe"], params={"empresa_id": emp, "fecha": fecha})
+    return client.get("/rule-sets/vigente", headers=H["rrhh"], params={"empresa_id": emp, "fecha": fecha})
 
 
 def test_reglas_confirmadas_cavas(client, H, ids):
@@ -22,6 +22,8 @@ def test_gcb_sa_hereda_base(client, H, ids):
     assert e["horas_extra"]["destino_default"] == "compensacion"
     assert e["horas_extra"]["sobretasas"] == base["horas_extra"]["sobretasas"] and e["part_time"] == base["part_time"]
     assert e["nocturno"]["mostrar_sobretasa_separada"] is False
+    assert e["dia_operativo"]["corte"] == "00:00"
+    assert (e["tolerancia"]["modo"], e["tolerancia"]["minutos"]) == ("umbral_perdona", 10)
 
 
 def test_versionado_por_vigencia(client, H, ids):
