@@ -10,11 +10,19 @@ filtros; aquí se aplican, sobre ese resultado ya acotado:
 - ``sort``: campo (``-campo`` descendente; admite ``a.b``).
 - ``page`` (1..n) y ``page_size`` (1..PAGE_SIZE_MAX, por defecto 20).
 Sin ``page`` la respuesta no cambia (compatibilidad con clientes existentes).
+
+S8 paso 6: los listados principales paginan en la BD con ``paginar_sql`` (WHERE + COUNT + ORDER BY estable +
+LIMIT/OFFSET) y devuelven ya el dict, por lo que el middleware los deja pasar. El middleware queda solo como
+respaldo en memoria para listados secundarios que aún devuelven una lista.
 """
 import json
 import unicodedata
 from typing import Any
+from typing import Callable, Optional
 from urllib.parse import parse_qs
+
+from fastapi import Request
+from sqlalchemy import Boolean, Integer, String, cast, func, or_, select
 
 PAGE_SIZE_MAX = 200
 PAGE_SIZE_DEF = 20
@@ -142,3 +150,66 @@ class PaginacionMiddleware:
                 await send({"type": "http.response.body", "body": data})
 
         await self.app(scope, receive, capturar)
+
+
+# ---------------------------------------------------------------- paginación en BD (S8 paso 6)
+_CON_ACENTO, _SIN_ACENTO = "áéíóúüñàèìòùÁÉÍÓÚÜÑ", "aeiouunaeiouaeiouun"
+
+
+def params_pagina(request: Request) -> Optional[dict]:
+    """Dependencia FastAPI: dict de query params si la petición trae ``page``; None si no (respuesta lista)."""
+    qp = request.query_params
+    return {k: qp.get(k) for k in qp.keys()} if "page" in qp else None
+
+
+def _plano(expr):
+    return func.translate(func.lower(cast(expr, String)), _CON_ACENTO, _SIN_ACENTO)
+
+
+def _valor(col, v: str):
+    t = getattr(col, "type", None)
+    if isinstance(t, Boolean):
+        return str(v).lower() in ("1", "true", "si", "sí", "t", "yes")
+    if isinstance(t, Integer):
+        return int(v)
+    return v
+
+
+def paginar_sql(db, stmt, params: dict, fila: Callable, *, buscar=(), orden: Optional[dict] = None,
+                filtros: Optional[dict] = None, fecha=None, desempate=(), orden_def=(), escalar: bool = False) -> dict:
+    """Pagina ``stmt`` (select ya acotado por RBAC/alcance) en la BD.
+
+    - ``buscar``: columnas para ``q`` (cada término debe aparecer en alguna; sin acentos/mayúsculas).
+    - ``filtros``: {param: columna} de igualdad; ``fecha``: columna para ``desde``/``hasta``.
+    - ``orden``: {campo: columna} permitidos en ``sort`` (``-campo`` desc; campos desconocidos se ignoran).
+    - ``desempate``: columnas únicas que se agregan al final para un orden estable entre páginas.
+    """
+    q = _norm(params.get("q") or "").strip()
+    if q and buscar:
+        for t in q.split():
+            stmt = stmt.where(or_(*[_plano(c).like(f"%{t}%") for c in buscar]))
+    for k, col in (filtros or {}).items():
+        v = params.get(k)
+        if v not in (None, ""):
+            try:
+                stmt = stmt.where(col == _valor(col, v))
+            except ValueError:
+                stmt = stmt.where(False)
+    if fecha is not None:
+        if params.get("desde"):
+            stmt = stmt.where(fecha >= params["desde"])
+        if params.get("hasta"):
+            stmt = stmt.where(fecha <= params["hasta"])
+    total = db.scalar(select(func.count()).select_from(stmt.order_by(None).subquery())) or 0
+    size = _entero(params.get("page_size"), PAGE_SIZE_DEF, 1, PAGE_SIZE_MAX)
+    pages = max(1, -(-total // size))
+    page = min(_entero(params.get("page"), 1, 1), pages)
+    ords = []
+    for campo in [s for s in (params.get("sort") or "").split(",") if s]:
+        c = (orden or {}).get(campo.lstrip("-+"))
+        if c is not None:
+            ords.append(c.desc().nulls_last() if campo.startswith("-") else c.asc().nulls_last())
+    ords += [*(orden_def if not ords else ()), *desempate]
+    stmt = stmt.order_by(None).order_by(*ords).limit(size).offset((page - 1) * size)
+    filas = db.scalars(stmt).all() if escalar else db.execute(stmt).all()
+    return {"items": [fila(r) for r in filas], "total": total, "page": page, "page_size": size, "pages": pages}

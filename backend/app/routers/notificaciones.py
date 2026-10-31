@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..alcance import empresa_alcance
@@ -11,6 +12,7 @@ from ..audit import audit
 from ..db import get_db
 from ..deps import current_user
 from ..models import Empresa, Notificacion, Usuario
+from ..paginacion import paginar_sql, params_pagina
 
 router = APIRouter(prefix="/notificaciones", tags=["notificaciones"])
 PERIODO = r"^\d{4}-(0[1-9]|1[0-2])$"
@@ -36,16 +38,26 @@ def _q(db: Session, user: Usuario, empresa_id: Optional[int]):
 @router.get("")
 def listar(empresa_id: Optional[int] = None, periodo: Optional[str] = Query(None, pattern=PERIODO),
            solo_activas: bool = True, solo_no_leidas: bool = False,
-           db: Session = Depends(get_db), user: Usuario = Depends(current_user)):
+           db: Session = Depends(get_db), user: Usuario = Depends(current_user),
+           pag: Optional[dict] = Depends(params_pagina)):
     _gestor(user)
-    q = _q(db, user, empresa_id)
+    eid = empresa_alcance(user, empresa_id)
+    q = select(Notificacion)
+    if eid:
+        q = q.where(Notificacion.empresa_id == eid)
     if periodo:
-        q = q.filter(Notificacion.periodo == periodo)
+        q = q.where(Notificacion.periodo == periodo)
     if solo_activas:
-        q = q.filter(Notificacion.activa.is_(True))
+        q = q.where(Notificacion.activa.is_(True))
     if solo_no_leidas:
-        q = q.filter(Notificacion.leida_en.is_(None))
-    return [_out(n) for n in q.order_by(Notificacion.id.desc()).limit(500)]
+        q = q.where(Notificacion.leida_en.is_(None))
+    if pag is not None:  # S8 paso 6: paginado en BD, sin tope de 500
+        orden = {"id": Notificacion.id, "periodo": Notificacion.periodo, "tipo": Notificacion.tipo,
+                 "creada_en": Notificacion.creada_en, "mensaje": Notificacion.mensaje, "leida": Notificacion.leida_en}
+        return paginar_sql(db, q, pag, _out, buscar=(Notificacion.mensaje, Notificacion.tipo, Notificacion.periodo),
+                           orden=orden, filtros={"tipo": Notificacion.tipo}, desempate=(Notificacion.id.desc(),),
+                           escalar=True)
+    return [_out(n) for n in db.scalars(q.order_by(Notificacion.id.desc()))]
 
 
 @router.get("/conteo")

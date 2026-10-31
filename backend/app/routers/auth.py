@@ -1,4 +1,5 @@
 ﻿from datetime import datetime, timezone
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
@@ -8,6 +9,7 @@ from ..audit import audit, to_dict
 from ..db import get_db
 from ..deps import current_user, require
 from ..models import Empresa, Trabajador, Unidad, Usuario
+from ..paginacion import paginar_sql, params_pagina
 from ..schemas import LoginIn, PasswordUpd, PerfilUpd, UsuarioEmpresaIn, UsuarioIn, UsuarioUpd
 from ..security import create_token, hash_password, verify_password
 
@@ -80,7 +82,13 @@ def _empresa_usuario(db: Session, rol: str, unidad_id, empresa_id):
 
 
 @r.get("/usuarios")
-def list_users(db: Session = Depends(get_db), _: Usuario = Depends(require("admin"))):
+def list_users(db: Session = Depends(get_db), _: Usuario = Depends(require("admin")),
+               pag: Optional[dict] = Depends(params_pagina)):
+    if pag is not None:  # S8 paso 6: paginado en BD (sin password_hash en la búsqueda)
+        orden = {k: getattr(Usuario, k) for k in ("id", "email", "nombre", "rol", "activo", "empresa_id", "unidad_id", "ultimo_login")}
+        return paginar_sql(db, select(Usuario), pag, to_dict, buscar=(Usuario.email, Usuario.nombre, Usuario.rol),
+                           orden=orden, filtros={k: getattr(Usuario, k) for k in ("rol", "activo", "empresa_id", "unidad_id")},
+                           desempate=(Usuario.id,), escalar=True)
     return [to_dict(x) for x in db.scalars(select(Usuario).order_by(Usuario.id))]
 
 

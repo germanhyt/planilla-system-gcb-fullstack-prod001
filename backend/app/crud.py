@@ -3,7 +3,7 @@ from typing import Callable, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import String, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -11,6 +11,7 @@ from .audit import audit, to_dict
 from .db import get_db
 from .deps import require
 from .models import Usuario
+from .paginacion import FILTROS_IGUALDAD, paginar_sql, params_pagina
 
 
 def crud_router(model, prefix: str, entidad: str, create_schema: type[BaseModel], read_roles, write_roles,
@@ -42,8 +43,14 @@ def crud_router(model, prefix: str, entidad: str, create_schema: type[BaseModel]
             db.rollback()
             raise HTTPException(403, f"{entidad} fuera de su alcance")
 
+    cols = model.__table__.columns
+    _orden = {c.name: getattr(model, c.key) for c in cols}
+    _buscar = [getattr(model, c.key) for c in cols if isinstance(c.type, String)]
+    _filtros = {k: getattr(model, k) for k in FILTROS_IGUALDAD if k in cols}
+
     @r.get("")
-    def listar(incluir_inactivos: bool = False, empresa_id: Optional[int] = None, db: Session = Depends(get_db), u: Usuario = Depends(require(*read_roles))):
+    def listar(incluir_inactivos: bool = False, empresa_id: Optional[int] = None, db: Session = Depends(get_db),
+               u: Usuario = Depends(require(*read_roles)), pag: Optional[dict] = Depends(params_pagina)):
         q = select(model).order_by(model.id)
         if not incluir_inactivos:
             q = q.where(model.activo.is_(True))
@@ -51,6 +58,9 @@ def crud_router(model, prefix: str, entidad: str, create_schema: type[BaseModel]
             q = q.where(model.empresa_id == empresa_id)
         if scope:
             q = scope(q, u)
+        if pag is not None:  # S8 paso 6: WHERE/COUNT/ORDER BY/LIMIT en la BD
+            return paginar_sql(db, q, pag, to_dict, buscar=_buscar, orden=_orden, filtros=_filtros,
+                               desempate=(model.id,), escalar=True)
         return [to_dict(o) for o in db.scalars(q)]
 
     @r.get("/{id_}")
