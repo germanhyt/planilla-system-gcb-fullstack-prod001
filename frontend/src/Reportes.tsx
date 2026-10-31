@@ -38,7 +38,7 @@ export function Reportes({ rol }: { rol: string }) {
   const t = data?.totales
   return <section><h2>Reportes {rol === 'jefe' ? 'de mi unidad' : ''}</h2>
     <p style={{ fontSize: 13, color: '#555' }}>Mes calendario; cada turno cuenta en el mes de su día operativo. Horas nocturnas 22:00–06:00 siempre calculadas;
-      el recargo nocturno se muestra aparte sólo en empresas que lo pagan por separado (CAVAS). Bono 3 AM: cantidad aprobada (monto lo fija administración).</p>
+      el recargo nocturno se muestra aparte sólo en empresas que lo pagan por separado (según sus reglas: nocturno.mostrar_sobretasa_separada). Bono 3 AM: cantidad aprobada (monto lo fija administración).</p>
     <div className="form">
       <label>Empresa <select value={empresa} onChange={e => setEmpresa(e.target.value)}>
         {gestor && <option value="">Todas</option>}{empresas.map(e => <option key={e.id} value={e.id}>{e.codigo}</option>)}</select></label>

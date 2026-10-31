@@ -55,7 +55,7 @@ export function Excepciones({ rol }: { rol: string }) {
   const pendientes = items?.filter(i => i.accionable).length ?? 0
   return <section><h2>Excepciones {rol === 'jefe' ? 'de mi unidad' : ''}</h2>
     <p style={{ fontSize: 13, color: '#555' }}>Las HE preautorizadas en el horario se pagan solas. El exceso no programado llega aquí como <b>no autorizado</b>; regularizarlo es opcional.
-      Destino por defecto según empresa (CAVAS: pago · GCB SA: compensación). Las alertas PT85/PT102 (&gt;4 h/día de promedio semanal) son informativas y no bloquean.</p>
+      Destino por defecto: el configurado en las reglas vigentes de cada empresa (horas_extra.destino_default). Las alertas PT85/PT102 (&gt;4 h/día de promedio semanal) son informativas y no bloquean.</p>
     <div className="form">
       <label>Desde <input type="date" value={desde} onChange={e => setDesde(e.target.value)} /></label>
       <label>Hasta <input type="date" value={hasta} onChange={e => setHasta(e.target.value)} /></label>
