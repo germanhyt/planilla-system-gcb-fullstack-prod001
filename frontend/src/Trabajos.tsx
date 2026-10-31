@@ -1,12 +1,18 @@
 /** Sprint 7: notificaciones RRHH, progreso de trabajos y versiones de export Planilla Core. */
 import { useEffect, useState } from 'react'
+import { Bell, BellRing, CheckCheck, Download } from 'lucide-react'
 import { api, getToken } from './api'
+import { Button, Card, Field, PageHeader, Pantalla, Pill, Toolbar } from './ui'
+import { Chips, DataTable, type ColumnDef } from './ui/DataTable'
+import { fallo, ok } from './ui/feedback'
+import { conEmpresa, useEmpresaFiltro } from './ui/empresaFiltro'
+import { fechaHora, useCarga } from './ui/hooks'
 import { esperarTrabajo, ETIQUETA_ALERTA, textoTrabajo, Trabajo } from './trabajosLib'
 
 export function ProgresoTrabajo({ t }: { t: Trabajo | null }) {
   if (!t) return null
-  return <div data-testid="progreso-trabajo" style={{ margin: '6px 0' }}>
-    <progress max={100} value={t.porcentaje} style={{ width: 240 }} /> <span>{textoTrabajo(t)}</span></div>
+  return <div data-testid="progreso-trabajo" className="flex items-center gap-3 rounded-card border border-border bg-surface px-4 py-3 text-sm shadow-card">
+    <progress max={100} value={t.porcentaje} className="ds-progress h-2 w-60 overflow-hidden rounded-full" /> <span>{textoTrabajo(t)}</span></div>
 }
 
 /** Lanza un POST que puede devolver un trabajo y sigue su progreso. */
@@ -29,30 +35,31 @@ export function useConteoNotificaciones(activo: boolean, refrescar = 0) {
 const mesActual = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Lima' }).slice(0, 7)
 
 export function Notificaciones({ onCambio }: { onCambio?: () => void }) {
-  const [lista, setLista] = useState<any[]>([]); const [periodo, setPeriodo] = useState(mesActual()); const [msg, setMsg] = useState('')
-  const [soloNoLeidas, setSoloNoLeidas] = useState(false)
-  const cargar = () => api<any[]>(`/notificaciones?solo_no_leidas=${soloNoLeidas}`).then(setLista).catch(e => setMsg(e.message))
-  useEffect(() => { cargar() }, [soloNoLeidas])
+  const empresa = useEmpresaFiltro()
+  const [periodo, setPeriodo] = useState(mesActual()); const [solo, setSolo] = useState<'no' | 'si'>('no')
+  const [recarga, setRecarga] = useState(0); const c = { run: () => setRecarga(n => n + 1) }
   const generar = async () => {
-    setMsg('')
-    try { await api(`/notificaciones/generar?periodo=${periodo}`, { method: 'POST' }); setMsg(`Alertas de ${periodo} evaluadas.`); cargar(); onCambio?.() }
-    catch (e: any) { setMsg(e.message) }
+    try { await api(`/notificaciones/generar?${conEmpresa({ periodo }, empresa)}`, { method: 'POST' }); ok(`Alertas de ${periodo} evaluadas.`); c.run(); onCambio?.() }
+    catch (e) { fallo(e) }
   }
-  const leer = async (n: any) => { await api(`/notificaciones/${n.id}/leida`, { method: 'POST' }).catch(() => {}); cargar(); onCambio?.() }
-  return <section><h2>Notificaciones RRHH</h2>
-    <p style={{ fontSize: 13, color: '#555' }}>Alertas internas: asistencia decidida que perdio sus marcas, pendientes cerca del cierre, riesgo part time y bonos sin aprobar. Se resuelven solas al corregirse la causa.</p>
-    <div className="form">
-      <label>Periodo <input type="month" value={periodo} onChange={e => setPeriodo(e.target.value)} /></label>
-      <button onClick={generar}>Evaluar alertas</button>
-      <label><span><input type="checkbox" checked={soloNoLeidas} onChange={e => setSoloNoLeidas(e.target.checked)} /> Solo no leidas</span></label>
-    </div>
-    {msg && <p>{msg}</p>}
-    {lista.length === 0 ? <p>Sin alertas activas.</p> :
-      <table><thead><tr><th>Tipo</th><th>Periodo</th><th>Mensaje</th><th>Creada</th><th></th></tr></thead>
-        <tbody>{lista.map(n => <tr key={n.id} style={{ fontWeight: n.leida ? 'normal' : 'bold' }}><td>{ETIQUETA_ALERTA[n.tipo] || n.tipo}</td><td>{n.periodo}</td><td>{n.mensaje}</td>
-          <td>{n.creada_en ? new Date(n.creada_en).toLocaleString('es-PE', { timeZone: 'America/Lima' }) : ''}</td>
-          <td>{!n.leida && <button onClick={() => leer(n)}>Marcar leida</button>}</td></tr>)}</tbody></table>}
-  </section>
+  const leer = async (n: any) => { await api(`/notificaciones/${n.id}/leida`, { method: 'POST' }).catch(() => {}); c.run(); onCambio?.() }
+  const cols: ColumnDef<any, any>[] = [
+    { accessorKey: 'tipo', header: 'Tipo', cell: x => <span className="flex items-center gap-2">{!x.row.original.leida && <span className="size-2 rounded-full bg-accent" aria-label="No leída" />}
+      <Pill tono={/riesgo|perd/.test(x.getValue()) ? 'danger' : 'warning'}>{ETIQUETA_ALERTA[x.getValue()] || x.getValue()}</Pill></span> },
+    { accessorKey: 'periodo', header: 'Periodo' },
+    { accessorKey: 'mensaje', header: 'Mensaje', cell: x => <span className={x.row.original.leida ? '' : 'font-semibold'}>{x.getValue()}</span> },
+    { accessorKey: 'creada_en', header: 'Creada', cell: x => fechaHora(x.getValue()) },
+    { id: 'acc', header: '', enableSorting: false, cell: x => !x.row.original.leida && <Button size="sm" icon={CheckCheck} onClick={() => leer(x.row.original)}>Marcar leída</Button> },
+  ]
+  return <Pantalla>
+    <PageHeader titulo="Notificaciones RRHH" icon={Bell} desc="Alertas internas: asistencia decidida que perdió sus marcas, pendientes cerca del cierre, riesgo part time y bonos sin aprobar. Se resuelven solas al corregirse la causa." />
+    <Card><Toolbar>
+      <Field label="Periodo"><input type="month" className="ds-input" value={periodo} onChange={e => setPeriodo(e.target.value)} /></Field>
+      <Button variant="primary" icon={BellRing} onClick={generar}>Evaluar alertas</Button>
+    </Toolbar></Card>
+    <DataTable data={[]} columns={cols} servidor={{ url: '/notificaciones', params: { solo_no_leidas: solo === 'si', empresa_id: empresa }, clave: 'notif', recarga }} vacio="Sin alertas activas." filaClase={n => n.leida ? undefined : 'bg-accent-soft/40'}
+      chips={<Chips label="Lectura" valor={solo} onChange={setSolo} chips={[{ valor: 'no', label: 'Todas' }, { valor: 'si', label: 'Solo no leídas' }]} />} />
+  </Pantalla>
 }
 
 export async function descargarVersion(id: number) {
@@ -63,18 +70,15 @@ export async function descargarVersion(id: number) {
 }
 
 export function VersionesExport({ empresa, periodo, recarga }: { empresa: string; periodo: string; recarga: number }) {
-  const [vs, setVs] = useState<any[]>([])
-  useEffect(() => {
-    if (!empresa) { setVs([]); return }
-    api<any[]>(`/reportes/export-planilla-core/versiones?empresa_id=${empresa}&periodo=${periodo}`).then(setVs).catch(() => setVs([]))
-  }, [empresa, periodo, recarga])
   if (!empresa) return null
-  return <div data-testid="versiones-export"><h3>Versiones exportadas {periodo}</h3>
-    {vs.length === 0 ? <p>Sin exportaciones registradas.</p> :
-      <table><thead><tr><th>Version</th><th>Formato</th><th>Estado</th><th>Layout</th><th>Trabajadores</th><th>Lineas</th><th>Checksum</th><th>Generado</th><th></th></tr></thead>
-        <tbody>{vs.map(v => <tr key={v.id}><td>v{v.version}</td><td>{v.formato}</td><td>{v.estado}</td><td>{v.layout_version}</td><td>{v.trabajadores}</td><td>{v.lineas}</td>
-          <td title={v.checksum}><code>{String(v.checksum).slice(0, 12)}</code></td>
-          <td>{v.generado_en ? new Date(v.generado_en).toLocaleString('es-PE', { timeZone: 'America/Lima' }) : ''}</td>
-          <td><button onClick={() => descargarVersion(v.id)}>Descargar</button></td></tr>)}</tbody></table>}
-  </div>
+  const cols: ColumnDef<any, any>[] = [
+    { accessorKey: 'version', header: 'Versión', cell: x => <b className="font-semibold">v{x.getValue()}</b> },
+    { accessorKey: 'formato', header: 'Formato', cell: x => String(x.getValue()).toUpperCase() },
+    { accessorKey: 'estado', header: 'Estado', cell: x => <Pill tono={x.getValue() === 'FINAL' ? 'success' : 'warning'}>{x.getValue()}</Pill> },
+    { accessorKey: 'layout_version', header: 'Layout' }, { accessorKey: 'trabajadores', header: 'Trabajadores' }, { accessorKey: 'lineas', header: 'Líneas' },
+    { accessorKey: 'checksum', header: 'Checksum', cell: x => <code title={x.getValue()} className="text-xs">{String(x.getValue()).slice(0, 12)}</code> },
+    { accessorKey: 'generado_en', header: 'Generado', cell: x => fechaHora(x.getValue()) },
+    { id: 'acc', header: '', enableSorting: false, cell: x => <Button size="sm" icon={Download} onClick={() => descargarVersion(x.row.original.id).catch(fallo)}>Descargar</Button> },
+  ]
+  return <div data-testid="versiones-export"><DataTable data={[]} columns={cols} buscar={false} servidor={{ url: '/reportes/export-planilla-core/versiones', params: { empresa_id: empresa, periodo }, clave: 'vers', recarga }} vacio="Sin exportaciones registradas." titulo={`Versiones exportadas ${periodo}`} ordenInicial={[{ id: 'version', desc: true }]} /></div>
 }

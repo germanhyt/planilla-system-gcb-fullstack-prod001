@@ -11,6 +11,7 @@ from ..alcance import filtro_empresa, fuera_de_alcance
 from ..db import get_db
 from ..deps import current_user
 from ..models import BancoHorasCompensatorias, Trabajador, Usuario
+from ..paginacion import paginar_sql, params_pagina
 
 router = APIRouter(prefix="/banco-horas", tags=["banco_horas"])
 
@@ -105,6 +106,7 @@ def consultar_historial(
     limite: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
     user: Usuario = Depends(current_user),
+    pag: Optional[dict] = Depends(params_pagina),
 ):
     """
     Historial de movimientos de horas compensatorias.
@@ -119,26 +121,30 @@ def consultar_historial(
         if (not trab and user.rol == "jefe") or (trab and fuera_de_alcance(user, trab)):
             raise HTTPException(403, "Solo puede ver trabajadores de su unidad")
     
-    movimientos = db.query(BancoHorasCompensatorias).filter(
-        BancoHorasCompensatorias.trabajador_id == trabajador_id
-    ).order_by(BancoHorasCompensatorias.creado_en.desc(), BancoHorasCompensatorias.id.desc()).limit(limite).all()
-    
+    B = BancoHorasCompensatorias
+    stmt = select(B).where(B.trabajador_id == trabajador_id)
+    if pag is not None:  # S8 paso 7: paginado en la BD (sin tope de 200)
+        return paginar_sql(db, stmt, pag, _mov, escalar=True, buscar=(B.tipo, B.origen), filtros={"tipo": B.tipo},
+                           fecha=B.fecha_movimiento,
+                           orden={"fecha_movimiento": B.fecha_movimiento, "tipo": B.tipo, "horas": B.horas,
+                                  "saldo_nuevo": B.saldo_nuevo, "origen": B.origen, "fecha_expira": B.fecha_expira,
+                                  "creado_en": B.creado_en},
+                           orden_def=(B.creado_en.desc(),), desempate=(B.id.desc(),))
+    movimientos = db.scalars(stmt.order_by(B.creado_en.desc(), B.id.desc()).limit(limite)).all()
+    return {"trabajador_id": trabajador_id, "movimientos": [_mov(m) for m in movimientos]}
+
+
+def _mov(m: BancoHorasCompensatorias) -> dict:
     return {
-        "trabajador_id": trabajador_id,
-        "movimientos": [
-            {
-                "id": m.id,
-                "fecha_movimiento": m.fecha_movimiento.isoformat(),
-                "tipo": m.tipo,
-                "horas": float(m.horas),
-                "saldo_anterior": float(m.saldo_anterior),
-                "saldo_nuevo": float(m.saldo_nuevo),
-                "origen": m.origen,
-                "fecha_expira": m.fecha_expira.isoformat() if m.fecha_expira else None,
-                "creado_en": m.creado_en.isoformat()
-            }
-            for m in movimientos
-        ]
+        "id": m.id,
+        "fecha_movimiento": m.fecha_movimiento.isoformat(),
+        "tipo": m.tipo,
+        "horas": float(m.horas),
+        "saldo_anterior": float(m.saldo_anterior),
+        "saldo_nuevo": float(m.saldo_nuevo),
+        "origen": m.origen,
+        "fecha_expira": m.fecha_expira.isoformat() if m.fecha_expira else None,
+        "creado_en": m.creado_en.isoformat(),
     }
 
 

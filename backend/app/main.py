@@ -48,6 +48,8 @@ for rt in [
     app.include_router(rt)
 
 
+
+
 @app.get("/health")
 def health():
     with engine.connect() as c:

@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..alcance import empresa_alcance
@@ -18,6 +19,7 @@ from ..cierre import checklist
 from ..db import get_db
 from ..deps import current_user
 from ..models import Asistencia, CierrePeriodo, Empresa, Trabajador, Usuario
+from ..paginacion import paginar_sql, params_pagina
 from ..schemas import CierrePeriodoIn, ReaperturaPeriodoIn
 
 router = APIRouter(prefix="/periodos", tags=["periodos"])
@@ -118,10 +120,19 @@ def reabrir_periodo(cierre_id: int, data: ReaperturaPeriodoIn, request: Request,
 
 @router.get("/historial")
 def historial_cierres(empresa_id: Optional[int] = None, db: Session = Depends(get_db),
-                      user: Usuario = Depends(current_user)):
-    """Estado actual de cierres por empresa+periodo (el detalle de cada cierre/reapertura está en auditoría)."""
+                      user: Usuario = Depends(current_user), pag: Optional[dict] = Depends(params_pagina)):
+    """Estado actual de cierres por empresa+periodo (el detalle de cada cierre/reapertura está en auditoría).
+    S9: ``?page=`` pagina, filtra (``estado``, ``q``) y ordena en la BD."""
     _gestor(user)
     empresa_id = empresa_alcance(user, empresa_id)
+    if pag is not None:
+        C = CierrePeriodo
+        stmt = select(C).where(C.empresa_id == empresa_id) if empresa_id else select(C)
+        return paginar_sql(db, stmt, pag, _out, escalar=True, buscar=(C.periodo, C.estado, C.razon_reapertura),
+                           filtros={"estado": C.estado},
+                           orden={"periodo": C.periodo, "estado": C.estado, "cerrado_en": C.cerrado_en,
+                                  "reabierto_en": C.reabierto_en},
+                           orden_def=(C.periodo.desc(),), desempate=(C.id.desc(),))
     q = db.query(CierrePeriodo)
     if empresa_id:
         q = q.filter(CierrePeriodo.empresa_id == empresa_id)

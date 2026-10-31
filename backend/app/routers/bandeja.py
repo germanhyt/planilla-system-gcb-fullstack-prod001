@@ -10,7 +10,7 @@ from datetime import date, timedelta
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import and_, false, func, select, true
+from sqlalchemy import Date, Float, Integer, String, and_, cast, func, literal, null, select, true, union_all
 from sqlalchemy.orm import Session
 from zoneinfo import ZoneInfo
 
@@ -28,7 +28,9 @@ from ..models import (
     Trabajador,
     Usuario,
 )
-from ..rules import efectivas
+from ..paginacion import filtrar_sql, paginar_sql, params_pagina
+from ..reglas_sql import regla_sql
+from ..rules import BASE, efectivas
 from .reglas import vigente
 
 LIMA = ZoneInfo("America/Lima")
@@ -69,27 +71,118 @@ def _trab(t: Trabajador) -> dict:
     return {"id": t.id, "codigo": t.codigo, "nombre": f"{t.nombres} {t.apellidos}", "unidad_id": t.unidad_id}
 
 
-def alertas_pt(db: Session, filtro, desde: date, hasta: date) -> list[dict]:
-    """Semanas (lun-dom) que tocan [desde, hasta] donde un PT85/PT102 promedia > umbral h por día trabajado."""
+def _pt_semanas(db: Session, filtro, desde: date, hasta: date):
+    """SELECT de semanas (lun-dom) que tocan [desde, hasta] con promedio PT85/PT102 > umbral vigente (en la BD)."""
     lunes = desde - timedelta(days=desde.weekday())
     fin = hasta - timedelta(days=hasta.weekday()) + timedelta(days=7)
-    semana = func.date_trunc("week", Asistencia.dia_operativo)
-    filas = db.execute(
-        select(Trabajador, TipoContrato.codigo, semana.label("sem"), func.sum(Asistencia.horas_trabajadas),
-               func.count(Asistencia.id))
-        .join(Asistencia, Asistencia.trabajador_id == Trabajador.id)
-        .join(TipoContrato, TipoContrato.id == Trabajador.tipo_contrato_id)
-        .where(filtro, TipoContrato.codigo.in_(("PT85", "PT102")), Asistencia.dia_operativo >= lunes,
-               Asistencia.dia_operativo < fin, Asistencia.horas_trabajadas.isnot(None))
-        .group_by(Trabajador.id, TipoContrato.codigo, semana)).all()
+    sem = cast(func.date_trunc("week", Asistencia.dia_operativo), Date)
+    total = func.sum(cast(Asistencia.horas_trabajadas, Float))
+    dias = func.count(Asistencia.id)
+    umbral = regla_sql(db, Trabajador.empresa_id, sem, lambda r: float(r["part_time"]["alerta_promedio_diario_horas"]),
+                       defecto=float(efectivas({})["part_time"]["alerta_promedio_diario_horas"]), antes_primera=True,
+                       tipo=Float())
+    return (select(Trabajador.id.label("trabajador_id"), TipoContrato.codigo.label("contrato"), sem.label("sem"),
+                   total.label("total"), dias.label("dias"), umbral.label("umbral"))
+            .join(Asistencia, Asistencia.trabajador_id == Trabajador.id)
+            .join(TipoContrato, TipoContrato.id == Trabajador.tipo_contrato_id)
+            .where(filtro, TipoContrato.codigo.in_(("PT85", "PT102")), Asistencia.dia_operativo >= lunes,
+                   Asistencia.dia_operativo < fin, Asistencia.horas_trabajadas.isnot(None))
+            .group_by(Trabajador.id, Trabajador.empresa_id, TipoContrato.codigo, sem)
+            .having(total / dias > umbral))
+
+
+def alertas_pt(db: Session, filtro, desde: date, hasta: date) -> list[dict]:
+    """Semanas (lun-dom) que tocan [desde, hasta] donde un PT85/PT102 promedia > umbral h por día trabajado."""
+    filas = db.execute(_pt_semanas(db, filtro, desde, hasta)).all()
+    trabs = {t.id: t for t in db.scalars(select(Trabajador).where(Trabajador.id.in_({f.trabajador_id for f in filas})))}
+    return [{"trabajador": trabs[f.trabajador_id], "contrato": f.contrato, "semana": f.sem,
+             "promedio": round(f.total / f.dias, 2), "total": round(f.total, 2), "dias": f.dias, "umbral": f.umbral}
+            for f in filas]
+
+
+def _union_bandeja(db: Session, filtro, desde: date, hasta: date):
+    """UNION ALL de las 5 fuentes con columnas comunes (en la BD, sin topes)."""
+    dia_lima = cast(func.timezone("America/Lima", Marca.ts_servidor), Date)
+    nulo_f, nulo_i, nulo_s = (null().cast(Float), null().cast(Integer), null().cast(String))
+
+    def cols(clave, tipo, orden, ref, dia, estado, horas=nulo_f, n=nulo_i, contrato=nulo_s, umbral=nulo_f, tid=None):
+        return (clave.label("clave"), literal(tipo).label("tipo"), literal(orden).label("orden"), ref.label("ref_id"),
+                (tid if tid is not None else Trabajador.id).label("trabajador_id"), dia.label("dia"),
+                estado.label("estado"), horas.label("horas"), n.label("n"), contrato.label("contrato"),
+                umbral.label("umbral"))
+
+    he = (select(*cols(literal("he-") + cast(RegularizacionHE.id, String), "he_no_programada", 0, RegularizacionHE.id,
+                       Asistencia.dia_operativo, RegularizacionHE.estado, horas=cast(RegularizacionHE.horas_exceso, Float)))
+          .join(Asistencia, Asistencia.id == RegularizacionHE.asistencia_id)
+          .join(Trabajador, Trabajador.id == RegularizacionHE.trabajador_id)
+          .where(filtro, Asistencia.dia_operativo >= desde, Asistencia.dia_operativo <= hasta))
+    tar = (select(*cols(literal("tar-") + cast(Asistencia.id, String), "tardanza", 1, Asistencia.id,
+                        Asistencia.dia_operativo, literal("informativo"), n=Asistencia.tardanza_min))
+           .join(Trabajador, Trabajador.id == Asistencia.trabajador_id)
+           .where(filtro, Asistencia.tardanza_min > 0, Asistencia.dia_operativo >= desde, Asistencia.dia_operativo <= hasta))
+    geo = (select(*cols(literal("geo-") + cast(Marca.id, String), "fuera_geocerca", 2, Marca.id, dia_lima,
+                        literal("informativo")))
+           .join(Trabajador, Trabajador.id == Marca.trabajador_id)
+           .where(filtro, Marca.validacion_estado == "fuera_geocerca", dia_lima >= desde, dia_lima <= hasta))
+    umbral_dif = regla_sql(db, Trabajador.empresa_id, dia_lima,
+                           lambda r: int(r["marcacion_offline"]["umbral_diferida_min"]),
+                           defecto=int(BASE["marcacion_offline"]["umbral_diferida_min"]), tipo=Integer())
+    dif = (select(*cols(literal("dif-") + cast(Marca.id, String), "marca_diferida", 3, Marca.id, dia_lima,
+                        literal("informativo"), n=Marca.diferencia_min, umbral=cast(umbral_dif, Float)))
+           .join(Trabajador, Trabajador.id == Marca.trabajador_id)
+           .where(filtro, Marca.diferida.is_(True), Marca.diferencia_min.isnot(None), dia_lima >= desde,
+                  dia_lima <= hasta, Marca.diferencia_min > umbral_dif))
+    p = _pt_semanas(db, filtro, desde, hasta).subquery()
+    pt = select(*cols(literal("pt-") + cast(p.c.trabajador_id, String) + literal("-") + cast(p.c.sem, String),
+                      "pt_alerta", 4, nulo_i, p.c.sem, literal("informativo"), horas=p.c.total, n=p.c.dias,
+                      contrato=p.c.contrato, umbral=p.c.umbral, tid=p.c.trabajador_id))
+    return union_all(he, tar, geo, dif, pt).subquery("bandeja")
+
+
+def _hidratar(db: Session, filas, filtro, desde: date, hasta: date) -> list[dict]:
+    """Construye los ítems sólo de las filas de la página (consultas por lote)."""
+    ids = lambda t: {f.ref_id for f in filas if f.tipo == t}  # noqa: E731
+    he = {r.id: (r, a, e) for r, a, e in db.execute(
+        select(RegularizacionHE, Asistencia, Empresa).join(Asistencia, Asistencia.id == RegularizacionHE.asistencia_id)
+        .join(Trabajador, Trabajador.id == RegularizacionHE.trabajador_id).join(Empresa, Empresa.id == Trabajador.empresa_id)
+        .where(RegularizacionHE.id.in_(ids("he_no_programada"))))} if ids("he_no_programada") else {}
+    mids = ids("fuera_geocerca") | ids("marca_diferida")
+    marcas = {m.id: m for m in db.scalars(select(Marca).where(Marca.id.in_(mids)))} if mids else {}
+    trabs = {t.id: t for t in db.scalars(select(Trabajador).where(Trabajador.id.in_({f.trabajador_id for f in filas})))}
+    alertas = {}
+    he_trabs = {trabs[f.trabajador_id].id for f in filas if f.tipo == "he_no_programada"}
+    if he_trabs:
+        for a in alertas_pt(db, and_(filtro, Trabajador.id.in_(he_trabs)), desde, hasta):
+            alertas[(a["trabajador"].id, a["semana"])] = a
     out = []
-    for t, tc, sem, total, dias in filas:
-        sem_d = sem.date() if hasattr(sem, "date") else sem
-        prom = float(total) / dias if dias else 0.0
-        umbral = umbral_pt(db, t.empresa_id, sem_d)
-        if prom > umbral:
-            out.append({"trabajador": t, "contrato": tc, "semana": sem_d, "promedio": round(prom, 2),
-                        "total": round(float(total), 2), "dias": dias, "umbral": umbral})
+    for f in filas:
+        t = trabs[f.trabajador_id]
+        base = {"clave": f.clave, "tipo": f.tipo, "ref_id": f.ref_id, "trabajador": _trab(t), "dia": f.dia.isoformat(),
+                "estado": f.estado, "accionable": False}
+        if f.tipo == "he_no_programada":
+            reg, asi, emp = he[f.ref_id]
+            alerta = alertas.get((t.id, asi.dia_operativo - timedelta(days=asi.dia_operativo.weekday())))
+            base |= {"empresa": emp.codigo, "detalle": f"{float(reg.horas_exceso):.2f} h de exceso no programado (no autorizado)",
+                     "horas": float(reg.horas_exceso), "destino": reg.destino,
+                     "destino_default": destino_default(db, t.empresa_id, asi.dia_operativo),
+                     "observacion": reg.observacion, "accionable": reg.estado == "pendiente",
+                     "alerta_pt": f"{alerta['contrato']}: promedio {alerta['promedio']} h/día en la semana" if alerta else None}
+        elif f.tipo == "tardanza":
+            base["detalle"] = f"Tardanza de {f.n} min"
+        elif f.tipo == "fuera_geocerca":
+            m = marcas[f.ref_id]
+            dist = f" a {round(float(m.distancia_m))} m" if m.distancia_m is not None else ""
+            base["detalle"] = f"Marca de {m.tipo} fuera de geocerca{dist}"
+        elif f.tipo == "marca_diferida":
+            m = marcas[f.ref_id]
+            disp = m.ts_cliente.astimezone(LIMA).strftime("%d/%m %H:%M") if m.ts_cliente else "?"
+            base["detalle"] = (f"Marca de {m.tipo} sincronizada offline {m.diferencia_min} min despues"
+                               f" (dispositivo {disp}; umbral {int(f.umbral)} min). Revisar")
+        else:
+            prom, total = round(f.horas / f.n, 2), round(f.horas, 2)
+            base["detalle"] = (f"{f.contrato}: promedio {prom} h/día ({total} h en {f.n} días)"
+                               f" > {f.umbral:g} h/día. Alerta no bloqueante")
+        out.append(base)
     return out
 
 
@@ -103,88 +196,33 @@ def bandeja(
     empresa_id: Optional[int] = None,
     db: Session = Depends(get_db),
     u: Usuario = Depends(current_user),
+    pag: Optional[dict] = Depends(params_pagina),
 ):
-    """Bandeja unificada de excepciones. Jefe: su unidad. RRHH/admin: todas. Trabajador: 403."""
+    """Bandeja unificada de excepciones. Jefe: su unidad. RRHH/admin: todas. Trabajador: 403.
+
+    S8 paso 7: UNION ALL de las fuentes en la BD; con ``?page=`` filtra (q/tipo/estado), cuenta, ordena y pagina en
+    SQL e hidrata sólo la página; ``resumen`` trae los KPI (total/pendientes/fuera_geocerca) con los mismos filtros.
+    Sin ``page`` devuelve la lista completa (misma consulta, sin topes)."""
     filtro = _alcance(db, u, unidad_id, empresa_id)
     if hasta < desde:
         raise HTTPException(400, "Rango inválido")
-    items: list[dict] = []
-    pt_por_trab: dict[int, list[dict]] = {}
-    for a in alertas_pt(db, filtro, desde, hasta):
-        pt_por_trab.setdefault(a["trabajador"].id, []).append(a)
-
-    if tipo in (None, "he_no_programada"):
-        q = (select(RegularizacionHE, Asistencia, Trabajador, Empresa)
-             .join(Asistencia, Asistencia.id == RegularizacionHE.asistencia_id)
-             .join(Trabajador, Trabajador.id == RegularizacionHE.trabajador_id)
-             .join(Empresa, Empresa.id == Trabajador.empresa_id)
-             .where(filtro, Asistencia.dia_operativo >= desde, Asistencia.dia_operativo <= hasta))
-        if estado in ("pendiente", "aprobado", "rechazado"):
-            q = q.where(RegularizacionHE.estado == estado)
-        elif estado == "informativo":
-            q = q.where(false())
-        for reg, asi, t, emp in db.execute(q.order_by(Asistencia.dia_operativo.desc(), RegularizacionHE.id.desc())):
-            sem = asi.dia_operativo - timedelta(days=asi.dia_operativo.weekday())
-            alerta = next((a for a in pt_por_trab.get(t.id, []) if a["semana"] == sem), None)
-            items.append({
-                "clave": f"he-{reg.id}", "tipo": "he_no_programada", "ref_id": reg.id, "trabajador": _trab(t),
-                "empresa": emp.codigo, "dia": asi.dia_operativo.isoformat(),
-                "detalle": f"{float(reg.horas_exceso):.2f} h de exceso no programado (no autorizado)",
-                "horas": float(reg.horas_exceso), "estado": reg.estado, "destino": reg.destino,
-                "destino_default": destino_default(db, t.empresa_id, asi.dia_operativo),
-                "observacion": reg.observacion, "accionable": reg.estado == "pendiente",
-                "alerta_pt": f"{alerta['contrato']}: promedio {alerta['promedio']} h/día en la semana" if alerta else None,
-            })
-
-    if tipo in (None, "tardanza") and estado in (None, "informativo"):
-        q = (select(Asistencia, Trabajador).join(Trabajador, Trabajador.id == Asistencia.trabajador_id)
-             .where(filtro, Asistencia.tardanza_min > 0, Asistencia.dia_operativo >= desde,
-                    Asistencia.dia_operativo <= hasta).order_by(Asistencia.dia_operativo.desc()).limit(300))
-        for asi, t in db.execute(q):
-            items.append({"clave": f"tar-{asi.id}", "tipo": "tardanza", "ref_id": asi.id, "trabajador": _trab(t),
-                          "dia": asi.dia_operativo.isoformat(), "detalle": f"Tardanza de {asi.tardanza_min} min",
-                          "estado": "informativo", "accionable": False})
-
-    if tipo in (None, "fuera_geocerca") and estado in (None, "informativo"):
-        q = (select(Marca, Trabajador).join(Trabajador, Trabajador.id == Marca.trabajador_id)
-             .where(filtro, Marca.validacion_estado == "fuera_geocerca",
-                    func.date(func.timezone("America/Lima", Marca.ts_servidor)) >= desde,
-                    func.date(func.timezone("America/Lima", Marca.ts_servidor)) <= hasta)
-             .order_by(Marca.ts_servidor.desc()).limit(300))
-        for m, t in db.execute(q):
-            dist = f" a {round(float(m.distancia_m))} m" if m.distancia_m is not None else ""
-            items.append({"clave": f"geo-{m.id}", "tipo": "fuera_geocerca", "ref_id": m.id, "trabajador": _trab(t),
-                          "dia": m.ts_servidor.date().isoformat(), "detalle": f"Marca de {m.tipo} fuera de geocerca{dist}",
-                          "estado": "informativo", "accionable": False})
-
-    if tipo in (None, "marca_diferida") and estado in (None, "informativo"):
-        from .marcas import umbral_diferida
-        q = (select(Marca, Trabajador).join(Trabajador, Trabajador.id == Marca.trabajador_id)
-             .where(filtro, Marca.diferida.is_(True), Marca.diferencia_min.isnot(None),
-                    func.date(func.timezone("America/Lima", Marca.ts_servidor)) >= desde,
-                    func.date(func.timezone("America/Lima", Marca.ts_servidor)) <= hasta)
-             .order_by(Marca.ts_servidor.desc()).limit(300))
-        for m, t in db.execute(q):
-            umbral = umbral_diferida(db, t.empresa_id, m.ts_servidor.date())
-            if m.diferencia_min <= umbral:
-                continue
-            disp = m.ts_cliente.astimezone(LIMA).strftime("%d/%m %H:%M") if m.ts_cliente else "?"
-            items.append({"clave": f"dif-{m.id}", "tipo": "marca_diferida", "ref_id": m.id, "trabajador": _trab(t),
-                          "dia": m.ts_servidor.astimezone(LIMA).date().isoformat(),
-                          "detalle": (f"Marca de {m.tipo} sincronizada offline {m.diferencia_min} min despues"
-                                      f" (dispositivo {disp}; umbral {umbral} min). Revisar"),
-                          "estado": "informativo", "accionable": False})
-
-    if tipo in (None, "pt_alerta") and estado in (None, "informativo"):
-        for lista in pt_por_trab.values():
-            for a in lista:
-                items.append({"clave": f"pt-{a['trabajador'].id}-{a['semana']}", "tipo": "pt_alerta", "ref_id": None,
-                              "trabajador": _trab(a["trabajador"]), "dia": a["semana"].isoformat(),
-                              "detalle": (f"{a['contrato']}: promedio {a['promedio']} h/día ({a['total']} h en {a['dias']} días)"
-                                          f" > {a['umbral']:g} h/día. Alerta no bloqueante"),
-                              "estado": "informativo", "accionable": False})
-    items.sort(key=lambda i: i["dia"], reverse=True)
-    return items
+    b = _union_bandeja(db, filtro, desde, hasta)
+    params = {"tipo": tipo, "estado": estado, **{k: v for k, v in (pag or {}).items() if k in ("q", "sort", "page", "page_size")}}
+    stmt = select(b).join(Trabajador, Trabajador.id == b.c.trabajador_id)
+    kw = dict(buscar=(Trabajador.codigo, Trabajador.nombres, Trabajador.apellidos, b.c.tipo),
+              filtros={"tipo": b.c.tipo, "estado": b.c.estado},
+              orden={"dia": b.c.dia, "tipo": b.c.tipo, "estado": b.c.estado, "trabajador": Trabajador.codigo,
+                     "trabajador.codigo": Trabajador.codigo},
+              orden_def=(b.c.dia.desc(), b.c.orden), desempate=(b.c.ref_id.desc().nulls_last(), b.c.clave))
+    res = paginar_sql(db, stmt, params, lambda r: r, sin_limite=pag is None, **kw)
+    res["items"] = _hidratar(db, res["items"], filtro, desde, hasta)
+    if pag is None:
+        return res["items"]
+    f = filtrar_sql(stmt, params, buscar=kw["buscar"], filtros=kw["filtros"]).subquery()
+    tot, pend, geo = db.execute(select(func.count(), func.count().filter(f.c.estado == "pendiente"),
+                                       func.count().filter(f.c.tipo == "fuera_geocerca")).select_from(f)).one()
+    res["resumen"] = {"total": tot, "pendientes": pend, "fuera_geocerca": geo}
+    return res
 
 
 def _saldo(db: Session, trabajador_id: int) -> float:
@@ -196,24 +234,33 @@ def _saldo(db: Session, trabajador_id: int) -> float:
 
 @banco.get("/saldos")
 def saldos(unidad_id: Optional[int] = None, empresa_id: Optional[int] = None, solo_con_movimientos: bool = False, db: Session = Depends(get_db),
-           u: Usuario = Depends(current_user)):
-    """Saldo de la bolsa de horas por trabajador. Trabajador: sólo el suyo; jefe: su unidad; RRHH/admin: todos."""
+           u: Usuario = Depends(current_user), pag: Optional[dict] = Depends(params_pagina)):
+    """Saldo de la bolsa de horas por trabajador. Trabajador: sólo el suyo; jefe: su unidad; RRHH/admin: todos.
+
+    S8 paso 7: saldo, movimientos y créditos por vencer como subconsultas correlacionadas; filtro, orden y
+    LIMIT/OFFSET en la BD con ``?page=`` (sin ``page``: la lista completa como antes)."""
     if u.rol == "trabajador":
         filtro = Trabajador.usuario_id == u.id
     else:
         filtro = _alcance(db, u, unidad_id, empresa_id)
-    trabs = db.scalars(select(Trabajador).where(filtro, Trabajador.activo).order_by(Trabajador.codigo)).all()
+    B = BancoHorasCompensatorias
     hoy = date.today()
-    out = []
-    for t in trabs:
-        movs = db.scalar(select(func.count(BancoHorasCompensatorias.id))
-                         .where(BancoHorasCompensatorias.trabajador_id == t.id)) or 0
-        if solo_con_movimientos and not movs:
-            continue
-        por_vencer = db.scalar(select(func.coalesce(func.sum(BancoHorasCompensatorias.horas), 0)).where(
-            BancoHorasCompensatorias.trabajador_id == t.id, BancoHorasCompensatorias.tipo == "credito",
-            BancoHorasCompensatorias.fecha_expira >= hoy,
-            BancoHorasCompensatorias.fecha_expira <= hoy + timedelta(days=30)))
-        out.append(_trab(t) | {"saldo_horas": _saldo(db, t.id), "movimientos": movs,
-                                "creditos_por_vencer_30d": float(por_vencer or 0)})
-    return out
+    movs = select(func.count(B.id)).where(B.trabajador_id == Trabajador.id).correlate(Trabajador).scalar_subquery()
+    saldo = func.coalesce(select(B.saldo_nuevo).where(B.trabajador_id == Trabajador.id).correlate(Trabajador)
+                          .order_by(B.creado_en.desc(), B.id.desc()).limit(1).scalar_subquery(), 0)
+    pv = select(func.coalesce(func.sum(B.horas), 0)).where(
+        B.trabajador_id == Trabajador.id, B.tipo == "credito", B.fecha_expira >= hoy,
+        B.fecha_expira <= hoy + timedelta(days=30)).correlate(Trabajador).scalar_subquery()
+    stmt = select(Trabajador, saldo.label("saldo"), movs.label("movs"), pv.label("pv")).where(filtro, Trabajador.activo)
+    if solo_con_movimientos:
+        stmt = stmt.where(movs > 0)
+
+    def fila(r):
+        t, s_, m_, p_ = r
+        return _trab(t) | {"saldo_horas": float(s_ or 0), "movimientos": m_ or 0, "creditos_por_vencer_30d": float(p_ or 0)}
+
+    res = paginar_sql(db, stmt, pag or {}, fila, buscar=(Trabajador.codigo, Trabajador.nombres, Trabajador.apellidos),
+                      orden={"codigo": Trabajador.codigo, "nombre": Trabajador.nombres, "saldo_horas": saldo,
+                             "movimientos": movs, "creditos_por_vencer_30d": pv},
+                      orden_def=(Trabajador.codigo,), desempate=(Trabajador.id,), sin_limite=pag is None)
+    return res if pag is not None else res["items"]

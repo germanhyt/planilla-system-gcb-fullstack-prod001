@@ -4,6 +4,8 @@
  * y se sincroniza al volver la conexión (Sprint 3 / Inc 5).
  */
 import { useEffect, useState } from "react";
+import { CheckCircle2, CloudOff, Fingerprint, Loader2, LogIn, LogOut, MapPin, QrCode, RefreshCw, TriangleAlert, Wifi } from "lucide-react";
+import { Aviso, Button, Card, Pill, cn } from "./ui";
 import { api } from "./api";
 import { QrScanner } from "./QrScanner";
 import { alCambiar, autoSincronizar, descartar, encolar, enviarApi, listar, MarcaPendiente, sincronizar, uuid } from "./offlineQueue";
@@ -70,60 +72,68 @@ export function Marcador({ token }: MarcadorProps) {
 
   const pendientes = cola.filter(m => m.estado === "pendiente");
   const rechazadas = cola.filter(m => m.estado === "rechazada");
-  const btn = (bg: string) => ({ flex: 1, padding: "1rem", fontSize: "1rem", backgroundColor: bg, color: "#fff", border: "none", borderRadius: "4px", cursor: loading ? "not-allowed" : "pointer" });
-  const caja = (bg: string, color: string) => ({ padding: "1rem", backgroundColor: bg, color, borderRadius: "4px", marginBottom: "1rem" });
+  const [ahora, setAhora] = useState(new Date());
+  useEffect(() => { const h = setInterval(() => setAhora(new Date()), 1000); return () => clearInterval(h); }, []);
+  const gps = typeof navigator !== "undefined" && "geolocation" in navigator;
+  const okRes = resultado?.validacion_estado === "ok";
 
   return (
-    <div style={{ padding: "1rem", maxWidth: "500px", margin: "0 auto" }}>
-      <h2>Registrar Asistencia</h2>
-      {!online && <div data-testid="sin-red" style={caja("#e2e3e5", "#383d41")}>Sin conexión. Puede marcar igual: se guardará en el dispositivo.</div>}
+    <section className="pantalla mx-auto flex w-full max-w-md flex-col gap-4">
+      <h2 className="!m-0 text-xl font-semibold tracking-tight">Registrar Asistencia</h2>
+      <div className="flex flex-wrap gap-2">
+        {online ? <Pill tono="success"><Wifi size={12} />En línea</Pill> : <Pill tono="neutral"><CloudOff size={12} />Sin conexión</Pill>}
+        <Pill tono={gps ? "accent" : "warning"}><MapPin size={12} />{gps ? "GPS disponible" : "GPS no disponible"}</Pill>
+        <Pill tono={pendientes.length ? "warning" : "neutral"}><RefreshCw size={12} />{pendientes.length} pendiente(s)</Pill>
+      </div>
+      {!online && <div data-testid="sin-red"><Aviso tono="neutral">Sin conexión. Puede marcar igual: se guardará en el dispositivo.</Aviso></div>}
 
-      <div style={{ marginBottom: "1rem" }}>
-        <label style={{ display: "block", marginBottom: "0.5rem" }}>Tipo de marca:</label>
+      <Card className="flex flex-col items-center gap-5 py-8 text-center">
         <div>
-          <label style={{ marginRight: "1rem" }}><input type="radio" checked={tipo === "entrada"} onChange={() => setTipo("entrada")} /> Entrada</label>
-          <label><input type="radio" checked={tipo === "salida"} onChange={() => setTipo("salida")} /> Salida</label>
+          <div className="text-4xl font-bold tabular-nums tracking-tight">{ahora.toLocaleTimeString("es-PE", { timeZone: "America/Lima", hour: "2-digit", minute: "2-digit", second: "2-digit" })}</div>
+          <div className="text-sm capitalize text-muted">{ahora.toLocaleDateString("es-PE", { timeZone: "America/Lima", weekday: "long", day: "numeric", month: "long" })}</div>
         </div>
-      </div>
+        <div role="radiogroup" aria-label="Tipo de marca" className="grid w-full grid-cols-2 gap-1 rounded-card bg-surface-2 p-1">
+          {(["entrada", "salida"] as const).map(t => <label key={t} className={cn("flex cursor-pointer items-center justify-center gap-2 rounded-ctl py-2.5 text-sm font-semibold capitalize", tipo === t ? "bg-primary text-primary-fg shadow" : "text-muted")}>
+            <input type="radio" className="sr-only" checked={tipo === t} onChange={() => setTipo(t)} />{t === "entrada" ? <LogIn size={16} /> : <LogOut size={16} />}{t === "entrada" ? "Entrada" : "Salida"}</label>)}
+        </div>
+        <button type="button" onClick={marcarGps} disabled={loading} aria-label="Marcar con GPS"
+          className="grid size-44 cursor-pointer place-items-center rounded-full border-0 bg-gradient-to-br from-accent-strong to-primary text-white shadow-[0_12px_40px_-8px_var(--c-accent)] ring-8 ring-accent-soft transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-70">
+          <span className="flex flex-col items-center gap-1.5">{loading ? <Loader2 size={44} className="animate-spin" /> : <Fingerprint size={48} />}
+            <span className="text-base font-semibold">{loading ? "Registrando…" : "Marcar con GPS"}</span><span className="text-xs capitalize opacity-80">{tipo}</span></span>
+        </button>
+        <Button icon={QrCode} onClick={() => setShowQr(true)} disabled={loading} className="w-full justify-center">Escanear QR</Button>
+      </Card>
 
-      <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem" }}>
-        <button onClick={marcarGps} disabled={loading} style={btn("#007bff")}>📍 Marcar con GPS</button>
-        <button onClick={() => setShowQr(true)} disabled={loading} style={btn("#28a745")}>📷 Escanear QR</button>
-      </div>
-
-      {loading && <div style={caja("#f0f0f0", "#000")}>Registrando...</div>}
-      {error && <div style={caja("#f8d7da", "#721c24")}>⚠️ {error}</div>}
-      {aviso && <div style={caja("#cce5ff", "#004085")}>📥 {aviso}</div>}
+      {error && <Aviso tono="danger"><TriangleAlert size={14} className="mr-1 inline" />{error}</Aviso>}
+      {aviso && <Aviso tono="accent">{aviso}</Aviso>}
 
       {resultado && (
-        <div style={caja(resultado.validacion_estado === "ok" ? "#d4edda" : "#fff3cd", resultado.validacion_estado === "ok" ? "#155724" : "#856404")}>
-          <h3 style={{ margin: "0 0 0.5rem 0" }}>{resultado.validacion_estado === "ok" ? "✅ Marca registrada" : "⚠️ Marca con alerta"}</h3>
-          <p style={{ margin: "0.25rem 0" }}><strong>Hora servidor:</strong> {new Date(resultado.ts_servidor).toLocaleString("es-PE")}</p>
-          {resultado.distancia_m != null && <p style={{ margin: "0.25rem 0" }}><strong>Distancia:</strong> {Math.round(resultado.distancia_m)} metros de la sede</p>}
-          {resultado.validacion_estado === "fuera_geocerca" && (
-            <p style={{ margin: "0.5rem 0 0 0", fontSize: "0.9rem" }}>La marca fue registrada pero está fuera del radio de la geocerca. Su supervisor será notificado.</p>
-          )}
-        </div>
+        <Card className={cn("border-l-4", okRes ? "border-l-success" : "border-l-warning")}>
+          <p className="m-0 mb-2 flex items-center gap-2 font-semibold">{okRes ? <CheckCircle2 className="text-success" size={20} /> : <TriangleAlert className="text-warning" size={20} />}{okRes ? "Marca registrada" : "Marca con alerta"}</p>
+          <p className="m-0 text-sm"><strong>Hora servidor:</strong> {new Date(resultado.ts_servidor).toLocaleString("es-PE")}</p>
+          {resultado.distancia_m != null && <p className="m-0 text-sm"><strong>Distancia:</strong> {Math.round(resultado.distancia_m)} metros de la sede</p>}
+          {resultado.validacion_estado === "fuera_geocerca" && <p className="m-0 mt-2 text-sm text-muted">La marca fue registrada pero está fuera del radio de la geocerca. Su supervisor será notificado.</p>}
+        </Card>
       )}
 
       {(pendientes.length > 0 || rechazadas.length > 0) && (
-        <div data-testid="cola-offline" style={caja("#fff8e1", "#5d4200")}>
-          <strong>Marcas por sincronizar: {pendientes.length}</strong>
-          {pendientes.length > 0 && <button style={{ marginLeft: 8 }} disabled={!online} onClick={() => sincronizar(enviarApi).catch(() => {})}>Reintentar ahora</button>}
-          <ul style={{ margin: "0.5rem 0 0 1rem", padding: 0 }}>
+        <Card data-testid="cola-offline">
+          <div className="flex items-center justify-between gap-2"><strong className="text-sm">Marcas por sincronizar: {pendientes.length}</strong>
+            {pendientes.length > 0 && <Button size="sm" icon={RefreshCw} disabled={!online} onClick={() => sincronizar(enviarApi).catch(() => {})}>Reintentar ahora</Button>}</div>
+          <ul className="m-0 mt-2 grid list-none gap-1.5 p-0 text-sm">
             {cola.map(m => (
-              <li key={m.id_idempotente}>
-                {m.tipo} {new Date(m.ts_cliente).toLocaleString("es-PE")} ({m.qr_code ? "QR" : "GPS"}) —{" "}
-                {m.estado === "pendiente" ? `pendiente${m.intentos ? ` (${m.intentos} intentos)` : ""}` : (
-                  <span style={{ color: "#b00" }}>rechazada: {m.error} <button onClick={() => descartar(m.id_idempotente)}>Descartar</button></span>
+              <li key={m.id_idempotente} className="flex flex-wrap items-center gap-2 rounded-ctl bg-surface-2 px-2 py-1.5">
+                <span className="capitalize">{m.tipo}</span> <span className="text-muted">{new Date(m.ts_cliente).toLocaleString("es-PE")} ({m.qr_code ? "QR" : "GPS"})</span>
+                {m.estado === "pendiente" ? <Pill tono="warning">pendiente{m.intentos ? ` (${m.intentos} intentos)` : ""}</Pill> : (
+                  <><Pill tono="danger">rechazada: {m.error}</Pill><Button size="sm" onClick={() => descartar(m.id_idempotente)}>Descartar</Button></>
                 )}
               </li>
             ))}
           </ul>
-        </div>
+        </Card>
       )}
 
       {showQr && <QrScanner onScan={onQrScan} onClose={() => setShowQr(false)} />}
-    </div>
+    </section>
   );
 }

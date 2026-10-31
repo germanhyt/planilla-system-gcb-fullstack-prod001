@@ -12,6 +12,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..alcance import filtro_empresa, fuera_de_alcance
@@ -21,6 +22,7 @@ from ..db import get_db
 from ..deps import current_user, require
 from ..engine import he_programadas_dia, recalcular_rango  # noqa: F401 - re-export para consumidores
 from ..models import HEProgramada, Trabajador, Usuario
+from ..paginacion import paginar_sql, params_pagina
 
 r = APIRouter(prefix="/he-programadas", tags=["he_programadas"])
 
@@ -48,22 +50,42 @@ def _alcance(u: Usuario, t: Trabajador) -> None:
 
 
 @r.get("")
-def listar(desde: date = Query(...), hasta: date = Query(...), trabajador_id: Optional[int] = None,
-           incluir_anuladas: bool = False, db: Session = Depends(get_db), u: Usuario = Depends(current_user)):
-    q = db.query(HEProgramada, Trabajador).join(Trabajador, Trabajador.id == HEProgramada.trabajador_id) \
-        .filter(HEProgramada.dia >= desde, HEProgramada.dia <= hasta)
-    if not incluir_anuladas:
-        q = q.filter(HEProgramada.estado == "vigente")
+def listar(desde: Optional[date] = None, hasta: Optional[date] = None, trabajador_id: Optional[int] = None,
+           incluir_anuladas: bool = False, unidad_id: Optional[int] = None, empresa_id: Optional[int] = None,
+           estado: Optional[str] = None, db: Session = Depends(get_db), u: Usuario = Depends(current_user),
+           pag: Optional[dict] = Depends(params_pagina)):
+    if pag is None and (desde is None or hasta is None):
+        raise HTTPException(422, "desde y hasta son obligatorios sin paginacion")
+    q = select(HEProgramada, Trabajador).join(Trabajador, Trabajador.id == HEProgramada.trabajador_id)
+    if desde:
+        q = q.where(HEProgramada.dia >= desde)
+    if hasta:
+        q = q.where(HEProgramada.dia <= hasta)
+    if estado:
+        q = q.where(HEProgramada.estado == estado)
+    elif not incluir_anuladas:
+        q = q.where(HEProgramada.estado == "vigente")
     if trabajador_id:
-        q = q.filter(HEProgramada.trabajador_id == trabajador_id)
+        q = q.where(HEProgramada.trabajador_id == trabajador_id)
+    if unidad_id:
+        q = q.where(Trabajador.unidad_id == unidad_id)
     if u.rol == "jefe":
         if not u.unidad_id:
             raise HTTPException(403, "Jefe sin unidad asignada")
-        q = q.filter(Trabajador.unidad_id == u.unidad_id)
+        q = q.where(Trabajador.unidad_id == u.unidad_id)
     elif u.rol == "trabajador":
-        q = q.filter(Trabajador.usuario_id == u.id)
-    q = q.filter(filtro_empresa(u))
-    return [_out(h, t) for h, t in q.order_by(HEProgramada.dia, Trabajador.codigo).limit(1000)]
+        q = q.where(Trabajador.usuario_id == u.id)
+    q = q.where(filtro_empresa(u, empresa_id))
+    if pag is not None:  # S8 paso 6: paginado en BD (sin tope de 1000)
+        orden = {"dia": HEProgramada.dia, "horas": HEProgramada.horas, "estado": HEProgramada.estado,
+                 "motivo": HEProgramada.motivo, "trabajador": Trabajador.apellidos, "codigo": Trabajador.codigo,
+                 "id": HEProgramada.id}
+        return paginar_sql(db, q, {k: v for k, v in pag.items() if k not in ("desde", "hasta", "estado")},
+                           lambda r: _out(r[0], r[1]),
+                           buscar=(Trabajador.codigo, Trabajador.nombres, Trabajador.apellidos, HEProgramada.motivo),
+                           orden=orden, orden_def=(HEProgramada.dia.desc(), Trabajador.codigo),
+                           desempate=(HEProgramada.id,))
+    return [_out(h, t) for h, t in db.execute(q.order_by(HEProgramada.dia, Trabajador.codigo).limit(1000))]
 
 
 @r.post("")

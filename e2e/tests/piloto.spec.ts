@@ -93,6 +93,7 @@ test('admin: configuracion - historial, validaciones y preview del diff, y salir
   await expect(page.getByRole('cell', { name: 'nocturno.inicio' })).toBeVisible()
   await page.locator('section nav').getByRole('button', { name: 'Tipos de contrato' }).click()
   await expect(page.getByRole('heading', { name: 'Tipos de contrato' })).toBeVisible()
-  await page.getByRole('button', { name: 'Salir' }).click()
+  await page.getByRole('button', { name: 'Menú de usuario' }).click()
+  await page.getByRole('menuitem', { name: 'Salir' }).click()
   await expect(page.getByPlaceholder('Correo')).toBeVisible()
 })
