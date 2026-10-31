@@ -10,6 +10,7 @@ from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -19,6 +20,7 @@ from ..cierre import exigir_abierto_trabajador
 from ..db import get_db
 from ..deps import current_user, require
 from ..models import FaltaJustificada, Trabajador, Usuario
+from ..paginacion import paginar_sql, params_pagina
 from ..schemas import FaltaJustificadaIn
 
 r = APIRouter(prefix="/justificaciones", tags=["justificaciones"])
@@ -82,20 +84,34 @@ def crear(data: FaltaJustificadaIn, db: Session = Depends(get_db), u: Usuario = 
 @r.get("")
 def listar(desde: Optional[date] = None, hasta: Optional[date] = None,
            estado: Optional[Literal["pendiente", "aprobada", "rechazada"]] = None,
-           db: Session = Depends(get_db), u: Usuario = Depends(current_user)):
-    q = db.query(FaltaJustificada, Trabajador).join(Trabajador, Trabajador.id == FaltaJustificada.trabajador_id)
+           trabajador_id: Optional[int] = None, unidad_id: Optional[int] = None, empresa_id: Optional[int] = None,
+           db: Session = Depends(get_db), u: Usuario = Depends(current_user),
+           pag: Optional[dict] = Depends(params_pagina)):
+    q = select(FaltaJustificada, Trabajador).join(Trabajador, Trabajador.id == FaltaJustificada.trabajador_id)
     if u.rol == "jefe":
-        q = q.filter(Trabajador.unidad_id == u.unidad_id)
+        q = q.where(Trabajador.unidad_id == u.unidad_id)
     elif u.rol == "trabajador":
-        q = q.filter(Trabajador.usuario_id == u.id)
-    q = q.filter(filtro_empresa(u))
+        q = q.where(Trabajador.usuario_id == u.id)
+    q = q.where(filtro_empresa(u, empresa_id))
     if desde:
-        q = q.filter(FaltaJustificada.dia >= desde)
+        q = q.where(FaltaJustificada.dia >= desde)
     if hasta:
-        q = q.filter(FaltaJustificada.dia <= hasta)
+        q = q.where(FaltaJustificada.dia <= hasta)
     if estado:
-        q = q.filter(FaltaJustificada.estado == estado)
-    return [out(f, t) for f, t in q.order_by(FaltaJustificada.dia.desc(), FaltaJustificada.id.desc())]
+        q = q.where(FaltaJustificada.estado == estado)
+    if trabajador_id:
+        q = q.where(FaltaJustificada.trabajador_id == trabajador_id)
+    if unidad_id:
+        q = q.where(Trabajador.unidad_id == unidad_id)
+    if pag is not None:  # S8 paso 6: paginado en BD
+        orden = {"dia": FaltaJustificada.dia, "estado": FaltaJustificada.estado, "motivo": FaltaJustificada.motivo,
+                 "trabajador": Trabajador.apellidos, "codigo": Trabajador.codigo, "id": FaltaJustificada.id}
+        return paginar_sql(db, q, {k: v for k, v in pag.items() if k not in ("desde", "hasta", "estado")},
+                           lambda r: out(r[0], r[1]),
+                           buscar=(Trabajador.codigo, Trabajador.nombres, Trabajador.apellidos,
+                                   FaltaJustificada.motivo, FaltaJustificada.descripcion),
+                           orden=orden, orden_def=(FaltaJustificada.dia.desc(),), desempate=(FaltaJustificada.id.desc(),))
+    return [out(f, t) for f, t in db.execute(q.order_by(FaltaJustificada.dia.desc(), FaltaJustificada.id.desc()))]
 
 
 @r.post("/{fid}/decidir")
