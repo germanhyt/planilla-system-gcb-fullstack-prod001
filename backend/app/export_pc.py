@@ -1,9 +1,12 @@
-"""Sprint 7: generacion versionada del archivo de interfaz Planilla Core (contrato PC-ASIS-1.1).
+"""Sprint 7: generacion versionada del archivo de interfaz Planilla Core (contrato PC-ASIS-1.2).
 
-Contrato: docs/contratos/PC-ASIS-1.1.md + app/contracts/pc_asis_1_1.schema.json (generado de `ExportPC`).
+Contrato: docs/contratos/PC-ASIS-1.2.md + app/contracts/pc_asis_1_2.schema.json (generado de `ExportPC`).
 - checksum = sha256 del JSON canonico de negocio (layout, empresa, periodo, estado, lineas); no incluye version ni
   fecha de generacion -> re-exportar sin cambios devuelve la MISMA version (idempotente).
 - Si cambia el contenido (recalculo, cierre PRELIMINAR->FINAL, bonos...) se crea la version siguiente.
+- 1.2 (S7, PO pt57u): sube la version por los conceptos BHCRE/BHDEB; 1.1 queda como historial
+  (docs/contratos/PC-ASIS-1.1.md, app/contracts/pc_asis_1_1.schema.json). El checksum incluye layout_version,
+  asi que el primer export 1.2 de un periodo ya exportado en 1.1 es una version nueva.
 - Antes de guardar se valida contra el contrato; si no cumple, no se persiste nada.
 """
 import csv
@@ -20,7 +23,7 @@ from sqlalchemy.orm import Session
 from .audit import audit
 from .models import Auditoria, Empresa, ExportPlanilla
 
-LAYOUT_VERSION = "PC-ASIS-1.1"
+LAYOUT_VERSION = "PC-ASIS-1.2"
 CODIGOS = Literal["HN", "TAR", "HE25", "HE35", "HNOC", "RNOC", "B3AM", "BHCRE", "BHDEB", "BHSAL"]
 CSV_CABECERA = ["layout_version", "empresa_codigo", "empresa_ruc", "periodo", "estado", "version_archivo",
                 "trabajador_codigo", "doc_tipo", "doc_numero", "concepto_codigo", "concepto_tipo", "unidad", "cantidad",
@@ -48,9 +51,9 @@ class LineaPC(BaseModel):
 
 
 class ExportPC(BaseModel):
-    """Contrato del archivo JSON PC-ASIS-1.1 (el CSV lleva las mismas lineas, una fila por linea)."""
-    model_config = ConfigDict(extra="forbid", title="PC-ASIS-1.1")
-    layout_version: Literal["PC-ASIS-1.1"]
+    """Contrato del archivo JSON PC-ASIS-1.2 (el CSV lleva las mismas lineas, una fila por linea)."""
+    model_config = ConfigDict(extra="forbid", title="PC-ASIS-1.2")
+    layout_version: Literal["PC-ASIS-1.2"]
     empresa_codigo: str = Field(min_length=1)
     empresa_ruc: Optional[str] = None
     periodo: str = Field(pattern=r"^\d{4}-(0[1-9]|1[0-2])$")

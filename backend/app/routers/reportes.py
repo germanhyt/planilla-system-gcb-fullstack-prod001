@@ -36,7 +36,7 @@ from ..models import (
 router = APIRouter(prefix="/reportes", tags=["reportes"])
 
 PERIODO = r"^\d{4}-(0[1-9]|1[0-2])$"
-from ..export_pc import LAYOUT_VERSION  # noqa: E402,F401  PC-ASIS-1.1 (contrato: docs/contratos/PC-ASIS-1.1.md)
+from ..export_pc import LAYOUT_VERSION  # noqa: E402,F401  PC-ASIS-1.2 (contrato: docs/contratos/PC-ASIS-1.2.md)
 
 # Catálogo de conceptos de la interfaz con Planilla Core (ver docs/interfaz-planilla-core.md).
 CONCEPTOS = {
@@ -345,7 +345,7 @@ def export_planilla_core(
     db: Session = Depends(get_db),
     user: Usuario = Depends(current_user),
 ):
-    """Archivo de interfaz para Planilla Core (contrato `PC-ASIS-1.1`, docs/contratos/PC-ASIS-1.1.md).
+    """Archivo de interfaz para Planilla Core (contrato `PC-ASIS-1.2`, docs/contratos/PC-ASIS-1.2.md).
 
     Periodo cerrado -> FINAL; abierto -> PRELIMINAR (o 409 con `solo_cerrado=true`). Versionado con historial:
     si el contenido (checksum sha256) no cambio, devuelve la misma version (idempotente); si cambio, crea v+1.
@@ -389,7 +389,7 @@ def export_descargar_version(export_id: int, db: Session = Depends(get_db), user
 
 @router.get("/export-planilla-core/contrato")
 def export_contrato(user: Usuario = Depends(current_user)):
-    """JSON Schema del contrato PC-ASIS-1.1."""
+    """JSON Schema del contrato PC-ASIS-1.2."""
     from ..export_pc import json_schema
     return json_schema()
 

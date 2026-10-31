@@ -160,7 +160,8 @@ Nueva migración: `$C run --rm -v $PWD/backend:/app api alembic revision --autog
 - **Golden tests**: `backend/tests/test_engine_golden_gcbsa.py`; E2E: `e2e/tests/gcbsa.spec.ts`.
 
 ## Sprint 7 - Integración Planilla Core (hardening)
-- Contrato `PC-ASIS-1.1` versionado: `docs/contratos/PC-ASIS-1.1.md` + JSON Schema (`/api/reportes/export-planilla-core/contrato`).
+- Contrato `PC-ASIS-1.2` versionado: `docs/contratos/PC-ASIS-1.2.md` (historial: `PC-ASIS-1.1.md`) + JSON Schema (`/api/reportes/export-planilla-core/contrato`).
+- PO pt57u: GCB SA HE programadas a banco publicado como rule_set v2 (vigente 2026-11-01; migracion `9d2e4f6a8b10` restaura v1 y audita); re-cierre concilia el banco por delta (movimientos de ajuste auditados); alertas evaluadas a diario por el worker (`ALERTAS_HORA`, por defecto 07:00 Lima; `ALERTAS_DIARIAS=false` lo apaga), una vez por dia.
 - Export por empresa con checksum, historial de versiones (`export_planilla`) y re-export idempotente; incluye BHCRE/BHDEB/BHSAL.
 - Trabajos en segundo plano (RQ, cola `recalc`): recálculo de periodo y export por lote; `GET /api/trabajos/{id}` con progreso.
   Por debajo de `JOBS_UMBRAL_SYNC` (40 trabajadores) se ejecutan en la petición. **El servicio `worker` debe estar activo** para los trabajos encolados.

@@ -1,0 +1,233 @@
+{
+  "$defs": {
+    "ConceptoPC": {
+      "additionalProperties": false,
+      "properties": {
+        "descripcion": {
+          "title": "Descripcion",
+          "type": "string"
+        },
+        "unidad": {
+          "enum": [
+            "HORAS",
+            "MINUTOS",
+            "CANTIDAD"
+          ],
+          "title": "Unidad",
+          "type": "string"
+        },
+        "tipo": {
+          "enum": [
+            "INFORMATIVO",
+            "DESCUENTO",
+            "REMUNERATIVO",
+            "INGRESO_INTERNO"
+          ],
+          "title": "Tipo",
+          "type": "string"
+        }
+      },
+      "required": [
+        "descripcion",
+        "unidad",
+        "tipo"
+      ],
+      "title": "ConceptoPC",
+      "type": "object"
+    },
+    "LineaPC": {
+      "additionalProperties": false,
+      "properties": {
+        "trabajador_codigo": {
+          "minLength": 1,
+          "title": "Trabajador Codigo",
+          "type": "string"
+        },
+        "doc_tipo": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Doc Tipo"
+        },
+        "doc_numero": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Doc Numero"
+        },
+        "trabajador_nombre": {
+          "title": "Trabajador Nombre",
+          "type": "string"
+        },
+        "concepto_codigo": {
+          "enum": [
+            "HN",
+            "TAR",
+            "HE25",
+            "HE35",
+            "HNOC",
+            "RNOC",
+            "B3AM",
+            "BHCRE",
+            "BHDEB",
+            "BHSAL"
+          ],
+          "title": "Concepto Codigo",
+          "type": "string"
+        },
+        "concepto_tipo": {
+          "enum": [
+            "INFORMATIVO",
+            "DESCUENTO",
+            "REMUNERATIVO",
+            "INGRESO_INTERNO"
+          ],
+          "title": "Concepto Tipo",
+          "type": "string"
+        },
+        "unidad": {
+          "enum": [
+            "HORAS",
+            "MINUTOS",
+            "CANTIDAD"
+          ],
+          "title": "Unidad",
+          "type": "string"
+        },
+        "cantidad": {
+          "title": "Cantidad",
+          "type": "number"
+        },
+        "monto": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Monto"
+        }
+      },
+      "required": [
+        "trabajador_codigo",
+        "trabajador_nombre",
+        "concepto_codigo",
+        "concepto_tipo",
+        "unidad",
+        "cantidad"
+      ],
+      "title": "LineaPC",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Contrato del archivo JSON PC-ASIS-1.2 (el CSV lleva las mismas lineas, una fila por linea).",
+  "properties": {
+    "layout_version": {
+      "const": "PC-ASIS-1.2",
+      "title": "Layout Version",
+      "type": "string"
+    },
+    "empresa_codigo": {
+      "minLength": 1,
+      "title": "Empresa Codigo",
+      "type": "string"
+    },
+    "empresa_ruc": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Empresa Ruc"
+    },
+    "periodo": {
+      "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+      "title": "Periodo",
+      "type": "string"
+    },
+    "estado": {
+      "enum": [
+        "PRELIMINAR",
+        "FINAL"
+      ],
+      "title": "Estado",
+      "type": "string"
+    },
+    "version_archivo": {
+      "minimum": 1,
+      "title": "Version Archivo",
+      "type": "integer"
+    },
+    "generado_en": {
+      "title": "Generado En",
+      "type": "string"
+    },
+    "checksum": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Checksum",
+      "type": "string"
+    },
+    "conceptos": {
+      "additionalProperties": {
+        "$ref": "#/$defs/ConceptoPC"
+      },
+      "propertyNames": {
+        "enum": [
+          "HN",
+          "TAR",
+          "HE25",
+          "HE35",
+          "HNOC",
+          "RNOC",
+          "B3AM",
+          "BHCRE",
+          "BHDEB",
+          "BHSAL"
+        ]
+      },
+      "title": "Conceptos",
+      "type": "object"
+    },
+    "lineas": {
+      "items": {
+        "$ref": "#/$defs/LineaPC"
+      },
+      "title": "Lineas",
+      "type": "array"
+    }
+  },
+  "required": [
+    "layout_version",
+    "empresa_codigo",
+    "periodo",
+    "estado",
+    "version_archivo",
+    "generado_en",
+    "checksum",
+    "conceptos",
+    "lineas"
+  ],
+  "title": "PC-ASIS-1.2",
+  "type": "object"
+}

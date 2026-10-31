@@ -9,10 +9,10 @@ async function token(request: APIRequestContext, email: string) {
   return { Authorization: `Bearer ${(await r.json()).access_token}` }
 }
 
-test('export PC-ASIS-1.1: contrato, checksum y re-export idempotente', async ({ request }) => {
+test('export PC-ASIS-1.2: contrato, checksum y re-export idempotente', async ({ request }) => {
   const h = await token(request, 'rrhh.gcb@demo.gcb.pe')
   const contrato = await (await request.get('/api/reportes/export-planilla-core/contrato', { headers: h })).json()
-  expect(JSON.stringify(contrato)).toContain('PC-ASIS-1.1')
+  expect(JSON.stringify(contrato)).toContain('PC-ASIS-1.2')
   const emp = (await (await request.get('/api/empresas', { headers: h })).json())[0]
   const url = `/api/reportes/export-planilla-core?empresa_id=${emp.id}&periodo=${PER}&formato=json`
   const a = await request.post(url, { headers: h }); expect(a.ok()).toBeTruthy()
@@ -22,7 +22,7 @@ test('export PC-ASIS-1.1: contrato, checksum y re-export idempotente', async ({ 
   expect(b.headers()['x-export-version']).toBe(a.headers()['x-export-version'])
   const vs = await (await request.get(`/api/reportes/export-planilla-core/versiones?empresa_id=${emp.id}&periodo=${PER}`, { headers: h })).json()
   expect(vs.length).toBeGreaterThan(0)
-  expect(vs[0].layout_version).toBe('PC-ASIS-1.1')
+  expect(vs[0].layout_version).toBe('PC-ASIS-1.2')
 })
 
 test('export por lote como trabajo con progreso hasta terminar', async ({ request }) => {
@@ -42,7 +42,7 @@ test('UI: historial de versiones en Reportes y vista de notificaciones', async (
   await abrir(page, 'Reportes', /Reportes/)
   await page.locator('input[type=month]').fill(PER)
   await expect(page.getByTestId('versiones-export')).toBeVisible()
-  await expect(page.getByTestId('versiones-export').getByText('PC-ASIS-1.1').first()).toBeVisible()
+  await expect(page.getByTestId('versiones-export').getByText('PC-ASIS-1.2').first()).toBeVisible()
   await page.locator('nav').getByRole('button', { name: /^Notificaciones/ }).click()
   await expect(page.getByRole('heading', { name: 'Notificaciones RRHH' })).toBeVisible()
   await page.locator('input[type=month]').fill(PER)

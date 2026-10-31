@@ -115,7 +115,7 @@ def test_export_preliminar_luego_final_versionado_y_auditado(client, H, datos, d
     filas = list(csv.DictReader(io.StringIO(r.text), delimiter=";"))
     mias = {f["concepto_codigo"]: f for f in filas if f["trabajador_codigo"] == datos["cav"]}
     assert mias["HE25"]["cantidad"] == "3.0" and mias["RNOC"]["cantidad"] == "14.0" and mias["B3AM"]["cantidad"] == "2"
-    assert all(f["layout_version"] == "PC-ASIS-1.1" and f["estado"] == "PRELIMINAR" for f in filas)
+    assert all(f["layout_version"] == "PC-ASIS-1.2" and f["estado"] == "PRELIMINAR" for f in filas)
     # cerrar periodo -> FINAL v2 (JSON)
     db.add(CierrePeriodo(empresa_id=datos["cav_emp"], periodo=PER, cerrado_por=1, estado="cerrado"))
     db.commit()

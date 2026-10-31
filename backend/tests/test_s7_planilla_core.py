@@ -1,6 +1,6 @@
-﻿"""Sprint 7: hardening de la integracion con Planilla Core.
+"""Sprint 7: hardening de la integracion con Planilla Core.
 
-(a) export PC-ASIS-1.1 versionado (checksum, idempotente, historial, contrato, banco de horas, lote por empresa)
+(a) export PC-ASIS-1.2 versionado (checksum, idempotente, historial, contrato, banco de horas, lote por empresa)
 (b) trabajos RQ con progreso (umbral sync, fallback sin Redis)
 (c) alertas internas RRHH
 (d) seed Parking + etiqueta de ventana nocturna desde configuracion
@@ -78,7 +78,7 @@ def test_export_checksum_e_idempotencia(client, H, esc):
     r1 = _exp(client, H, esc["emp"])
     assert r1.status_code == 200, r1.text
     j = r1.json()
-    assert j["layout_version"] == "PC-ASIS-1.1" and j["estado"] == "PRELIMINAR"
+    assert j["layout_version"] == "PC-ASIS-1.2" and j["estado"] == "PRELIMINAR"
     assert r1.headers["x-export-checksum"] == j["checksum"] and len(j["checksum"]) == 64
     assert r1.headers["x-export-reutilizada"] == "0"
     # checksum = sha256 del JSON canonico de negocio (sin version ni fecha)
@@ -118,7 +118,7 @@ def test_export_csv_banco_de_horas_y_conceptos(client, H, esc):
     mias = [dict(zip(cab, f)) for f in filas[1:] if f[cab.index("trabajador_codigo")] == esc["codigo"]]
     by = {m["concepto_codigo"]: m for m in mias}
     assert float(by["BHCRE"]["cantidad"]) == 3 and float(by["BHDEB"]["cantidad"]) == 1
-    assert float(by["BHSAL"]["cantidad"]) == 2 and all(m["layout_version"] == "PC-ASIS-1.1" for m in mias)
+    assert float(by["BHSAL"]["cantidad"]) == 2 and all(m["layout_version"] == "PC-ASIS-1.2" for m in mias)
     j = _exp(client, H, esc["emp"]).json()
     assert {"BHCRE", "BHDEB", "BHSAL"} <= set(j["conceptos"])
     assert j["conceptos"]["HNOC"]["descripcion"] == "Horas nocturnas 22:00-06:00"
@@ -147,9 +147,9 @@ def test_export_contrato_invalido_no_persiste(db, esc, monkeypatch):
 
 def test_export_schema_publicado_coincide(client, H):
     from app.export_pc import json_schema
-    ruta = os.path.join(os.path.dirname(__file__), "..", "app", "contracts", "pc_asis_1_1.schema.json")
+    ruta = os.path.join(os.path.dirname(__file__), "..", "app", "contracts", "pc_asis_1_2.schema.json")
     with open(ruta, encoding="utf-8") as f:
-        assert json.load(f) == json_schema(), "regenerar app/contracts/pc_asis_1_1.schema.json"
+        assert json.load(f) == json_schema(), "regenerar app/contracts/pc_asis_1_2.schema.json"
     assert client.get("/reportes/export-planilla-core/contrato", headers=H["rrhh"]).json() == json_schema()
 
 

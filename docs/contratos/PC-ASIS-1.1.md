@@ -1,6 +1,6 @@
 # Contrato de interfaz `PC-ASIS-1.1` (Asistencia → Planilla Core)
 
-Estado: **vigente** desde Sprint 7. Fuente de verdad ejecutable: `backend/app/export_pc.py` (modelos pydantic
+Estado: **reemplazado por [`PC-ASIS-1.2`](PC-ASIS-1.2.md)** (PO pt57u). Se conserva como historial de cambios; describía la versión vigente hasta S7. Fuente de verdad ejecutable: `backend/app/export_pc.py` (modelos pydantic
 `ExportPC` / `LineaPC` / `ConceptoPC`, `extra=forbid`) y su JSON Schema generado
 `backend/app/contracts/pc_asis_1_1.schema.json` (también en `GET /api/reportes/export-planilla-core/contrato`).
 Un test (`test_s7_planilla_core.py`) falla si el schema publicado deja de coincidir con el modelo.

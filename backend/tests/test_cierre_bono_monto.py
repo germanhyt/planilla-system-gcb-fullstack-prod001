@@ -32,7 +32,7 @@ def test_bono_monto_requerido_y_en_reportes(client, H, ids):
     assert fila["bono_3am"] == 3 and fila["bono_3am_monto"] == 75.5
     e = client.post("/reportes/export-planilla-core", params={"periodo": per, "empresa_id": emp, "formato": "json"},
                     headers=H["rrhh"]).json()
-    assert e["layout_version"] == "PC-ASIS-1.1" and e["estado"] == "PRELIMINAR"
+    assert e["layout_version"] == "PC-ASIS-1.2" and e["estado"] == "PRELIMINAR"
     li = next(x for x in e["lineas"] if x["concepto_codigo"] == "B3AM" and x["trabajador_codigo"] == t["codigo"])
     assert li["cantidad"] == 3 and li["monto"] == 75.5
     csv = client.post("/reportes/export-planilla-core", params={"periodo": per, "empresa_id": emp},
