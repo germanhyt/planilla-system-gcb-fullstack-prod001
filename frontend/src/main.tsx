@@ -16,7 +16,7 @@ import { Justificaciones } from './Justificaciones'
 import { Configuracion } from './Configuracion'
 import { Usuarios } from './Usuarios'
 import { Notificaciones, useConteoNotificaciones } from './Trabajos'
-import { textoBadge } from './trabajosLib'
+import { Shell } from './shell/Shell'
 import { EVENTO_SESION_EXPIRADA, reintentarTrasLogin } from './offlineQueue'
 
 // Token vencido al sincronizar marcas offline: volver al login sin perder la cola (IndexedDB persiste).
@@ -42,10 +42,10 @@ function Login({ onOk }: { onOk: () => void }) {
     try { const r = await api('/auth/login', { method: 'POST', body: { email, password } }); localStorage.setItem('token', r.access_token); reintentarTrasLogin(); onOk() }
     catch (e: any) { setErr(e.message) }
   }
-  return <form className="login" onSubmit={entrar}><h1>Planillas GCB</h1>
+  return <div className="ds login-wrap"><form className="login" onSubmit={entrar}><img src="/brand/logo-mark-dark-bg.png" alt="GCB" className="logo-dark" /><img src="/brand/logo-mark-light-bg.png" alt="GCB" className="logo-light" /><h1>Planillas GCB</h1>
     <input placeholder="Correo" value={email} onChange={e => setEmail(e.target.value)} />
     <input placeholder="Contraseña" type="password" value={password} onChange={e => setPassword(e.target.value)} />
-    <button>Ingresar</button>{err && <p className="err">{err}</p>}</form>
+    <button>Ingresar</button>{err && <p className="err">{err}</p>}</form></div>
 }
 
 function Perfil({ me, recargar }: { me: any; recargar: () => void }) {
@@ -76,13 +76,8 @@ function App() {
   const [tick, setTick] = useState(0)
   const noLeidas = useConteoNotificaciones(!!me && (me.rol === 'rrhh' || me.rol === 'admin'), tick)
   if (!getToken() || !me) return <Login onOk={cargar} />
-  const r = me.rol; const admin = r === 'admin'; const rrhh = r === 'rrhh' || admin; const jefe = r === 'jefe' || rrhh
-  const trabajador = r === 'trabajador' || jefe
-  const menu: [string, string, boolean][] = [['perfil', 'Mi perfil', true], ['marcar', 'Marcar asistencia', trabajador], ['mis-marcas', 'Mis marcas', r === 'trabajador'], ['marcas', 'Marcas', jefe], ['horarios', 'Horarios', jefe], ['he', 'Horas extra programadas', trabajador], ['justificaciones', r === 'trabajador' ? 'Justificar falta' : 'Justificaciones', trabajador], ['excepciones', 'Excepciones', jefe], ['reportes', 'Reportes', jefe], ['bonos', 'Bono 3 AM', rrhh], ['periodos', 'Cierre de periodo', rrhh], ['notificaciones', 'Notificaciones', rrhh], ['bolsa', r === 'trabajador' ? 'Mi bolsa de horas' : 'Bolsa de horas', true], ['empresas', 'Empresas', jefe], ['unidades', 'Unidades', jefe], ['sedes', 'Sedes', jefe],
-    ['contratos', 'Tipos de contrato', jefe], ['trabajadores', 'Trabajadores', jefe], ['reglas', 'Reglas', jefe && !rrhh], ['usuarios', 'Usuarios', admin], ['configuracion', 'Configuración', rrhh]]
-  return <div><nav>{menu.filter(m => m[2]).map(([k, l]) => <button key={k} className={vista === k ? 'act' : ''} onClick={() => setVista(k)}>{l}{k === 'notificaciones' && noLeidas > 0 && <b data-testid="badge-notif" className="badge">{textoBadge(noLeidas)}</b>}</button>)}
-    <span>{me.nombre} ({r})</span><button onClick={() => { localStorage.removeItem('token'); location.reload() }}>Salir</button></nav>
-    <main>
+  const r = me.rol; const admin = r === 'admin'; const rrhh = r === 'rrhh' || admin
+  return <Shell me={me} vista={vista} setVista={setVista} noLeidas={noLeidas}>
       {vista === 'perfil' && <Perfil me={me} recargar={cargar} />}
       {vista === 'marcar' && <Marcador token={getToken()!} />}
       {vista === 'mis-marcas' && <MisMarcas />}
@@ -104,14 +99,24 @@ function App() {
       {vista === 'reglas' && <Reglas />}
       {vista === 'usuarios' && <Usuarios />}
       {vista === 'configuracion' && <Configuracion admin={admin} contrato={CONTRATO} />}
-    </main></div>
+  </Shell>
 }
 
-const css = `body{font-family:system-ui;margin:0}nav{background:#1e3a5f;padding:8px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}nav span{color:#fff;margin-left:auto}
-nav .act{font-weight:bold}main{padding:12px}table{border-collapse:collapse;width:100%;font-size:14px}td,th{border:1px solid #ccc;padding:4px}
-.form{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;background:#f4f6fa;padding:10px;margin-bottom:10px}label{display:flex;flex-direction:column;font-size:13px}
-.login{max-width:320px;margin:80px auto;display:flex;flex-direction:column;gap:8px}.err{color:#b00}
-.alerta{color:#8a5a00;background:#fff4dc;padding:2px 6px;font-size:12px;margin-top:2px}.decision{display:flex;flex-wrap:wrap;gap:4px;align-items:center}tr.sel{background:#eef4ff}.badge{background:#c62828;color:#fff;border-radius:9px;padding:0 6px;margin-left:4px;font-size:11px}`
+const css = `body{margin:0;font-family:var(--font);background:var(--c-bg);color:var(--c-text);-webkit-font-smoothing:antialiased}
+[data-theme="light"] .logo-dark,:root:not([data-theme="light"]) .logo-light{display:none}
+.app-main{font-size:14px;line-height:1.5}.app-main h2{font-size:20px;font-weight:600;margin:0 0 12px;letter-spacing:-.01em}.app-main h3{font-size:15px;font-weight:600}
+.app-main>section,.app-main>div{background:var(--c-surface);border:1px solid var(--c-border);border-radius:var(--r-lg);padding:16px 20px;overflow-x:auto}
+.app-main input,.app-main select,.app-main textarea,.login input{background:var(--c-surface);color:var(--c-text);border:1px solid var(--c-border);border-radius:8px;padding:6px 8px;font:inherit}
+.app-main button,.login button{background:var(--c-surface-2);color:var(--c-text);border:1px solid var(--c-border);border-radius:8px;padding:6px 12px;font:inherit;cursor:pointer;margin:2px}
+.app-main button:hover{border-color:var(--c-muted)}.app-main button:disabled{opacity:.5;cursor:not-allowed}
+.app-main a{color:var(--c-blue)}.app-main pre{background:var(--c-surface-2);padding:10px;border-radius:8px;overflow:auto}
+section nav{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}section nav .act{font-weight:bold;border-color:var(--c-text)}
+table{border-collapse:collapse;width:100%;font-size:14px}td,th{border-bottom:1px solid var(--c-border);padding:8px;text-align:left}th{background:var(--c-surface-2);color:var(--c-muted);font-weight:500;font-size:12px;text-transform:uppercase;letter-spacing:.03em}
+.form{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;background:var(--c-surface-2);border:1px solid var(--c-border);border-radius:var(--r-md);padding:12px;margin-bottom:10px}label{display:flex;flex-direction:column;font-size:13px;color:var(--c-muted);gap:2px}
+.login-wrap{min-height:100vh;display:grid;place-items:center;padding:16px}.login{width:100%;max-width:340px;display:flex;flex-direction:column;gap:10px;background:var(--c-surface);border:1px solid var(--c-border);border-radius:var(--r-lg);padding:28px}
+.login img{height:36px;align-self:flex-start}.login h1{font-size:20px;margin:4px 0 8px}.login input{padding:10px 12px}.login button{background:var(--c-primary);color:var(--c-primary-fg);border:0;padding:10px;font-weight:600;margin:0}
+.err{color:var(--c-danger)}.alerta{color:var(--c-warning);background:var(--c-warning-bg);padding:2px 6px;font-size:12px;margin-top:2px;border-radius:6px}.decision{display:flex;flex-wrap:wrap;gap:4px;align-items:center}tr.sel{background:var(--c-surface-2)}
+.badge{background:var(--c-danger);color:var(--c-surface);border-radius:9px;padding:0 6px;margin-left:4px;font-size:11px}`
 document.head.insertAdjacentHTML('beforeend', `<style>${css}</style>`)
 document.head.insertAdjacentHTML('beforeend', `<style id="gcb-tokens">${buildThemeCss()}</style>`)
 applyTheme(getTheme(typeof localStorage === 'undefined' ? null : localStorage), document)
