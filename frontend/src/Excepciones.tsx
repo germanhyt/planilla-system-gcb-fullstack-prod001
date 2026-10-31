@@ -1,118 +1,140 @@
 /** Sprint 3 / Incremento 2: bandeja de Excepciones (jefe su unidad, RRHH/admin todo) y Bolsa de horas. */
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { AlertTriangle, Check, Clock3, Hourglass, Inbox, PiggyBank, Search, TrendingDown, TrendingUp, X } from 'lucide-react'
 import { api } from './api'
+import { Aviso, Button, Card, Field, KpiCard, PageHeader, Pantalla, Pill, PillEstado, Toolbar, cn } from './ui'
+import { Chips, DataTable, type ColumnDef } from './ui/DataTable'
+import { confirmar, fallo, ok } from './ui/feedback'
+import { conEmpresa, filtrarPorEmpresa, useEmpresaFiltro } from './ui/empresaFiltro'
+import { hoyLima, useCarga } from './ui/hooks'
 
-const hoyLima = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Lima' })
 const haceDias = (n: number) => new Date(Date.now() - n * 86400000).toLocaleDateString('en-CA', { timeZone: 'America/Lima' })
 
 type Destino = 'pago' | 'compensacion' | 'mixto'
-interface Item {
+export interface Item {
   clave: string; tipo: string; ref_id: number | null; trabajador: { id: number; codigo: string; nombre: string; unidad_id: number }
   empresa?: string; dia: string; detalle: string; horas?: number; estado: string; destino?: Destino | null
   destino_default?: Destino; observacion?: string | null; accionable: boolean; alerta_pt?: string | null
 }
-const TIPOS: Record<string, string> = { he_no_programada: 'HE no programada (no autorizada)', tardanza: 'Tardanza', fuera_geocerca: 'Marca fuera de geocerca', marca_diferida: 'Marca diferida (offline)', pt_alerta: 'Alerta part-time (PT85/PT102)' }
+export const TIPOS: Record<string, string> = { he_no_programada: 'HE no programada (no autorizada)', tardanza: 'Tardanza', fuera_geocerca: 'Marca fuera de geocerca', marca_diferida: 'Marca diferida (offline)', pt_alerta: 'Alerta part-time (PT85/PT102)' }
 const DESTINOS: Record<Destino, string> = { pago: 'Pago (25% / 35%)', compensacion: 'Compensación (bolsa de horas)', mixto: 'Mixto' }
-const ESTADO_COLOR: Record<string, string> = { pendiente: '#b26a00', aprobado: '#1b7f3b', rechazado: '#b00', informativo: '#555' }
+type Estado = '' | 'pendiente' | 'aprobado' | 'rechazado' | 'informativo'
 
 function Decision({ it, onHecho }: { it: Item; onHecho: () => void }) {
   const [destino, setDestino] = useState<Destino>(it.destino_default ?? 'pago')
   const [horasPago, setHorasPago] = useState(String(((it.horas ?? 0) / 2).toFixed(2)))
-  const [obs, setObs] = useState(''); const [err, setErr] = useState(''); const [enviando, setEnviando] = useState(false)
+  const [obs, setObs] = useState(''); const [enviando, setEnviando] = useState(false)
   const decidir = async (aprobar: boolean) => {
-    if (!aprobar && !confirm('¿Rechazar el exceso? No se pagará ni irá a la bolsa de horas.')) return
-    setEnviando(true); setErr('')
+    if (!aprobar && !await confirmar({ titulo: '¿Rechazar el exceso?', mensaje: 'No se pagará ni irá a la bolsa de horas.', peligro: true, ok: 'Rechazar' })) return
+    setEnviando(true)
     try {
       const body: any = { aprobar, observacion: obs || undefined }
       if (aprobar) { body.destino = destino; if (destino === 'mixto') body.horas_pago = Number(horasPago) }
-      await api(`/regularizaciones/${it.ref_id}/decidir`, { method: 'POST', body }); onHecho()
-    } catch (e: any) { setErr(e.message) } finally { setEnviando(false) }
+      await api(`/regularizaciones/${it.ref_id}/decidir`, { method: 'POST', body }); ok(aprobar ? `Regularizado: ${DESTINOS[destino]}.` : 'Exceso rechazado.'); onHecho()
+    } catch (e) { fallo(e) } finally { setEnviando(false) }
   }
-  return <div className="decision">
-    <select value={destino} onChange={e => setDestino(e.target.value as Destino)} title="Destino de las horas extra">
+  return <div className="flex min-w-[260px] flex-wrap items-center gap-1.5">
+    <select className="ds-input h-8 !py-0 text-xs" value={destino} onChange={e => setDestino(e.target.value as Destino)} title="Destino de las horas extra" aria-label="Destino de las horas extra">
       {(Object.keys(DESTINOS) as Destino[]).map(d => <option key={d} value={d}>{DESTINOS[d]}{d === it.destino_default ? ' (por defecto)' : ''}</option>)}
     </select>
-    {destino === 'mixto' && <label>Horas a pago <input type="number" step="0.25" min="0" max={it.horas} value={horasPago} onChange={e => setHorasPago(e.target.value)} style={{ width: 70 }} />
+    {destino === 'mixto' && <label className="flex items-center gap-1 text-xs text-muted">Horas a pago <input type="number" step="0.25" min="0" max={it.horas} value={horasPago} onChange={e => setHorasPago(e.target.value)} className="ds-input h-8 w-16 !py-0" />
       <small>resto {Math.max(0, (it.horas ?? 0) - Number(horasPago)).toFixed(2)} h a bolsa</small></label>}
-    <input placeholder="Observación (opcional)" value={obs} onChange={e => setObs(e.target.value)} />
-    <button disabled={enviando} onClick={() => decidir(true)}>✔ Regularizar</button>
-    <button disabled={enviando} onClick={() => decidir(false)}>✖ Rechazar</button>
-    {err && <span className="err">{err}</span>}
+    <input className="ds-input h-8 w-40 !py-0 text-xs" placeholder="Observación (opcional)" aria-label="Observación" value={obs} onChange={e => setObs(e.target.value)} />
+    <Button size="sm" variant="primary" icon={Check} disabled={enviando} onClick={() => decidir(true)}>Regularizar</Button>
+    <Button size="sm" variant="danger" icon={X} disabled={enviando} onClick={() => decidir(false)}>Rechazar</Button>
   </div>
 }
 
 export function Excepciones({ rol }: { rol: string }) {
+  const empresa = useEmpresaFiltro()
   const [desde, setDesde] = useState(haceDias(30)); const [hasta, setHasta] = useState(hoyLima())
-  const [tipo, setTipo] = useState(''); const [estado, setEstado] = useState('pendiente'); const [unidad, setUnidad] = useState('')
-  const [unidades, setUnidades] = useState<any[]>([]); const [items, setItems] = useState<Item[] | null>(null); const [err, setErr] = useState('')
-  const cargar = () => {
-    setErr('')
-    const q = new URLSearchParams({ desde, hasta }); if (tipo) q.set('tipo', tipo); if (estado) q.set('estado', estado); if (unidad) q.set('unidad_id', unidad)
-    api<Item[]>(`/excepciones/bandeja?${q}`).then(setItems).catch(e => setErr(e.message))
-  }
+  const [tipo, setTipo] = useState(''); const [estado, setEstado] = useState<Estado>('pendiente'); const [unidad, setUnidad] = useState('')
+  const [unidades, setUnidades] = useState<any[]>([])
+  const c = useCarga(() => api<Item[]>(`/excepciones/bandeja?${conEmpresa({ desde, hasta, tipo, estado, unidad_id: unidad }, empresa)}`), [desde, hasta, tipo, estado, unidad, empresa])
   useEffect(() => { if (rol !== 'jefe') api('/unidades').then(setUnidades).catch(() => {}) }, [])
-  useEffect(cargar, [tipo, estado, unidad])
-  const pendientes = items?.filter(i => i.accionable).length ?? 0
-  return <section><h2>Excepciones {rol === 'jefe' ? 'de mi unidad' : ''}</h2>
-    <p style={{ fontSize: 13, color: '#555' }}>Las HE preautorizadas en el horario se pagan solas. El exceso no programado llega aquí como <b>no autorizado</b>; regularizarlo es opcional.
-      Destino por defecto: el configurado en las reglas vigentes de cada empresa (horas_extra.destino_default). Las alertas PT85/PT102 (&gt;4 h/día de promedio semanal) son informativas y no bloquean.</p>
-    <div className="form">
-      <label>Desde <input type="date" value={desde} onChange={e => setDesde(e.target.value)} /></label>
-      <label>Hasta <input type="date" value={hasta} onChange={e => setHasta(e.target.value)} /></label>
-      <label>Tipo <select value={tipo} onChange={e => setTipo(e.target.value)}><option value="">Todos</option>
-        {Object.entries(TIPOS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
-      <label>Estado <select value={estado} onChange={e => setEstado(e.target.value)}><option value="">Todos</option>
-        {['pendiente', 'aprobado', 'rechazado', 'informativo'].map(s => <option key={s} value={s}>{s}</option>)}</select></label>
-      {rol !== 'jefe' && <label>Unidad <select value={unidad} onChange={e => setUnidad(e.target.value)}><option value="">Todas</option>
-        {unidades.map(u => <option key={u.id} value={u.id}>{u.nombre}</option>)}</select></label>}
-      <button onClick={cargar}>Buscar</button></div>
-    {err && <p className="err">{err}</p>}
-    {items && <p>{items.length} excepciones · <b>{pendientes}</b> pendientes de decisión</p>}
-    {items && !items.length && <p>Sin excepciones con esos filtros.</p>}
-    {items && items.length > 0 && <table><thead><tr><th>Día</th><th>Trabajador</th><th>Tipo</th><th>Detalle</th><th>Estado</th><th>Acción</th></tr></thead>
-      <tbody>{items.map(it => <tr key={it.clave}>
-        <td>{it.dia}</td><td>{it.trabajador.codigo} · {it.trabajador.nombre}{it.empresa ? ` (${it.empresa})` : ''}</td>
-        <td>{TIPOS[it.tipo] ?? it.tipo}</td>
-        <td>{it.detalle}{it.alerta_pt && <div className="alerta">⚠ {it.alerta_pt} (no bloquea)</div>}{it.observacion && <div><small>Obs.: {it.observacion}</small></div>}</td>
-        <td style={{ color: ESTADO_COLOR[it.estado] }}>{it.estado}{it.destino ? ` → ${DESTINOS[it.destino]}` : ''}</td>
-        <td>{it.accionable ? <Decision it={it} onHecho={cargar} /> : '—'}</td></tr>)}</tbody></table>}
-  </section>
+  useEffect(() => { c.run() }, [tipo, estado, unidad, empresa])
+  const items = c.datos ?? []
+  const pendientes = items.filter(i => i.accionable).length
+  const cols = useMemo<ColumnDef<Item, any>[]>(() => [
+    { accessorKey: 'dia', header: 'Día' },
+    { id: 't', accessorFn: it => `${it.trabajador.codigo} ${it.trabajador.nombre}`, header: 'Trabajador', cell: x => { const it = x.row.original
+      return <span><b className="font-semibold">{it.trabajador.nombre}</b><span className="block text-xs text-muted">{it.trabajador.codigo}{it.empresa ? ` · ${it.empresa}` : ''}</span></span> } },
+    { accessorKey: 'tipo', header: 'Tipo', cell: x => <Pill tono={x.getValue() === 'he_no_programada' ? 'accent' : x.getValue() === 'fuera_geocerca' ? 'danger' : 'neutral'}>{TIPOS[x.getValue()] ?? x.getValue()}</Pill> },
+    { accessorKey: 'detalle', header: 'Detalle', cell: x => { const it = x.row.original
+      return <span className="block max-w-[340px]">{it.detalle}{it.alerta_pt && <span className="mt-1 block"><Pill tono="warning">{it.alerta_pt} (no bloquea)</Pill></span>}
+        {it.observacion && <span className="block text-xs text-muted">Obs.: {it.observacion}</span>}</span> } },
+    { accessorKey: 'estado', header: 'Estado', cell: x => { const it = x.row.original
+      return <span className="flex flex-col items-start gap-0.5"><PillEstado estado={it.estado} />{it.destino && <span className="text-xs text-muted">→ {DESTINOS[it.destino]}</span>}</span> } },
+    { id: 'acc', header: 'Acción', enableSorting: false, cell: x => x.row.original.accionable ? <Decision it={x.row.original} onHecho={c.run} /> : <span className="text-muted">—</span> },
+  ], [c.run])
+  return <Pantalla>
+    <PageHeader titulo={`Excepciones ${rol === 'jefe' ? 'de mi unidad' : ''}`.trim()} icon={Inbox}
+      desc={<>Las HE preautorizadas en el horario se pagan solas. El exceso no programado llega aquí como <b>no autorizado</b>; regularizarlo es opcional.
+        Destino por defecto: el de las reglas vigentes de cada empresa. Las alertas PT85/PT102 son informativas y no bloquean.</>} />
+    <div className="grid gap-4 sm:grid-cols-3">
+      <KpiCard icon={Inbox} label="Excepciones" value={c.datos ? String(items.length) : '…'} sub="con los filtros actuales" />
+      <KpiCard icon={Hourglass} label="Pendientes de decisión" value={c.datos ? String(pendientes) : '…'} accent="amber" sub="accionables por usted" />
+      <KpiCard icon={AlertTriangle} label="Fuera de geocerca" value={c.datos ? String(items.filter(i => i.tipo === 'fuera_geocerca').length) : '…'} accent="danger" sub="en el rango" />
+    </div>
+    <Card><Toolbar>
+      <Field label="Desde"><input type="date" className="ds-input" value={desde} onChange={e => setDesde(e.target.value)} /></Field>
+      <Field label="Hasta"><input type="date" className="ds-input" value={hasta} onChange={e => setHasta(e.target.value)} /></Field>
+      <Field label="Tipo"><select className="ds-input" value={tipo} onChange={e => setTipo(e.target.value)}><option value="">Todos</option>
+        {Object.entries(TIPOS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
+      {rol !== 'jefe' && <Field label="Unidad"><select className="ds-input" value={unidad} onChange={e => setUnidad(e.target.value)}><option value="">Todas</option>
+        {filtrarPorEmpresa(unidades, empresa, u => u.empresa_id).map(u => <option key={u.id} value={u.id}>{u.nombre}</option>)}</select></Field>}
+      <Button variant="primary" icon={Search} onClick={c.run}>Buscar</Button></Toolbar></Card>
+    <DataTable data={items} columns={cols} cargando={c.cargando} error={c.err} reintentar={c.run} vacio="Sin excepciones con esos filtros." tam={15}
+      buscar="Buscar trabajador, detalle…" chips={<Chips label="Estado" valor={estado} onChange={setEstado} chips={[{ valor: 'pendiente', label: 'Pendientes' },
+        { valor: 'aprobado', label: 'Aprobadas' }, { valor: 'rechazado', label: 'Rechazadas' }, { valor: 'informativo', label: 'Informativas' }, { valor: '', label: 'Todas' }]} />} />
+  </Pantalla>
 }
 
-interface Saldo { id: number; codigo: string; nombre: string; unidad_id: number; saldo_horas: number; movimientos: number; creditos_por_vencer_30d: number }
+interface Saldo { id: number; codigo: string; nombre: string; unidad_id: number; saldo_horas: number; movimientos: number; creditos_por_vencer_30d: number; empresa_id?: number }
 
 function Movimientos({ t }: { t: Saldo }) {
-  const [movs, setMovs] = useState<any[] | null>(null); const [err, setErr] = useState('')
-  useEffect(() => { setMovs(null); api(`/banco-horas/historial/${t.id}?limite=200`).then(r => setMovs(r.movimientos)).catch(e => setErr(e.message)) }, [t.id])
-  return <div><h3>Movimientos · {t.codigo} {t.nombre} — saldo {t.saldo_horas.toFixed(2)} h</h3>
-    {err && <p className="err">{err}</p>}
-    {movs && !movs.length && <p>Sin movimientos.</p>}
-    {movs && movs.length > 0 && <table><thead><tr><th>Fecha</th><th>Tipo</th><th>Horas</th><th>Saldo anterior</th><th>Saldo nuevo</th><th>Origen</th><th>Vence</th></tr></thead>
-      <tbody>{movs.map(m => <tr key={m.id}><td>{m.fecha_movimiento}</td><td>{m.tipo === 'credito' ? '＋ Crédito' : '－ Débito'}</td>
-        <td>{m.horas.toFixed(2)}</td><td>{m.saldo_anterior.toFixed(2)}</td><td><b>{m.saldo_nuevo.toFixed(2)}</b></td><td>{m.origen}</td><td>{m.fecha_expira ?? '—'}</td></tr>)}</tbody></table>}
-  </div>
+  const c = useCarga(() => api<any>(`/banco-horas/historial/${t.id}?limite=200`).then(r => r.movimientos as any[]), [t.id])
+  useEffect(() => { c.setDatos(null); c.run() }, [t.id])
+  const cols = useMemo<ColumnDef<any, any>[]>(() => [
+    { accessorKey: 'fecha_movimiento', header: 'Fecha' },
+    { accessorKey: 'tipo', header: 'Tipo', cell: x => x.getValue() === 'credito' ? <Pill tono="success"><TrendingUp size={12} />Crédito</Pill> : <Pill tono="danger"><TrendingDown size={12} />Débito</Pill> },
+    { accessorKey: 'horas', header: 'Horas', cell: x => x.getValue().toFixed(2) },
+    { accessorKey: 'saldo_anterior', header: 'Saldo anterior', cell: x => x.getValue().toFixed(2) },
+    { accessorKey: 'saldo_nuevo', header: 'Saldo nuevo', cell: x => <b className="font-semibold">{x.getValue().toFixed(2)}</b> },
+    { accessorKey: 'origen', header: 'Origen' },
+    { accessorKey: 'fecha_expira', header: 'Vence', cell: x => x.getValue() ?? '—' },
+  ], [])
+  return <DataTable data={c.datos ?? []} columns={cols} cargando={c.cargando} error={c.err} reintentar={c.run} vacio="Sin movimientos." buscar={false}
+    titulo={`Movimientos · ${t.codigo} ${t.nombre} — saldo ${t.saldo_horas.toFixed(2)} h`} />
 }
 
 export function BolsaHoras({ rol }: { rol: string }) {
-  const [saldos, setSaldos] = useState<Saldo[] | null>(null); const [sel, setSel] = useState<Saldo | null>(null)
-  const [soloMov, setSoloMov] = useState(rol !== 'trabajador'); const [filtro, setFiltro] = useState(''); const [err, setErr] = useState('')
-  useEffect(() => {
-    api<Saldo[]>(`/banco-horas/saldos?solo_con_movimientos=${soloMov}`).then(s => { setSaldos(s); if (rol === 'trabajador' && s.length) setSel(s[0]) }).catch(e => setErr(e.message))
-  }, [soloMov])
-  if (rol === 'trabajador') return <section><h2>Mi bolsa de horas</h2>{err && <p className="err">{err}</p>}
-    {saldos && !saldos.length && <p>No tienes una ficha de trabajador vinculada.</p>}
-    {sel && <><p style={{ fontSize: 22 }}>Saldo disponible: <b>{sel.saldo_horas.toFixed(2)} h</b></p>
-      {sel.creditos_por_vencer_30d > 0 && <p className="alerta">⚠ {sel.creditos_por_vencer_30d.toFixed(2)} h de crédito vencen en los próximos 30 días</p>}
-      <Movimientos t={sel} /></>}</section>
-  const vis = (saldos ?? []).filter(s => !filtro || `${s.codigo} ${s.nombre}`.toLowerCase().includes(filtro.toLowerCase()))
-  return <section><h2>Bolsa de horas {rol === 'jefe' ? 'de mi unidad' : ''}</h2>
-    <div className="form"><label>Buscar <input value={filtro} onChange={e => setFiltro(e.target.value)} placeholder="Código o nombre" /></label>
-      <label style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}><input type="checkbox" checked={soloMov} onChange={e => setSoloMov(e.target.checked)} /> Sólo con movimientos</label></div>
-    {err && <p className="err">{err}</p>}
-    {saldos && <table><thead><tr><th>Código</th><th>Trabajador</th><th>Saldo (h)</th><th>Por vencer 30 d (h)</th><th>Movimientos</th><th></th></tr></thead>
-      <tbody>{vis.map(s => <tr key={s.id} className={sel?.id === s.id ? 'sel' : ''}><td>{s.codigo}</td><td>{s.nombre}</td><td><b>{s.saldo_horas.toFixed(2)}</b></td>
-        <td>{s.creditos_por_vencer_30d ? s.creditos_por_vencer_30d.toFixed(2) : '—'}</td><td>{s.movimientos}</td>
-        <td><button onClick={() => setSel(s)}>Ver movimientos</button></td></tr>)}</tbody></table>}
+  const empresa = useEmpresaFiltro()
+  const [sel, setSel] = useState<Saldo | null>(null)
+  const [soloMov, setSoloMov] = useState<'si' | 'no'>(rol !== 'trabajador' ? 'si' : 'no')
+  const c = useCarga(() => api<Saldo[]>(`/banco-horas/saldos?${conEmpresa({ solo_con_movimientos: soloMov === 'si' }, rol === 'trabajador' ? '' : empresa)}`), [soloMov, empresa])
+  useEffect(() => { c.run().then(s => { if (rol === 'trabajador' && s?.length) setSel(s[0]) }) }, [soloMov, empresa])
+  if (rol === 'trabajador') return <Pantalla>
+    <PageHeader titulo="Mi bolsa de horas" icon={PiggyBank} desc="Horas compensables acumuladas por horas extra destinadas a compensación." />
+    {c.err && <Aviso tono="danger">{c.err}</Aviso>}
+    {c.datos && !c.datos.length && <Aviso tono="neutral">No tienes una ficha de trabajador vinculada.</Aviso>}
+    {sel && <><div className="grid gap-4 sm:grid-cols-2">
+      <KpiCard icon={PiggyBank} label="Saldo disponible" value={`${sel.saldo_horas.toFixed(2)} h`} sub={`${sel.movimientos} movimientos`} />
+      <KpiCard icon={Clock3} label="Por vencer (30 días)" value={`${sel.creditos_por_vencer_30d.toFixed(2)} h`} accent={sel.creditos_por_vencer_30d > 0 ? 'amber' : 'teal'} sub="créditos próximos a expirar" />
+    </div><Movimientos t={sel} /></>}
+  </Pantalla>
+  const cols: ColumnDef<Saldo, any>[] = [
+    { accessorKey: 'codigo', header: 'Código' }, { accessorKey: 'nombre', header: 'Trabajador' },
+    { accessorKey: 'saldo_horas', header: 'Saldo (h)', cell: x => <b className={cn('font-semibold', x.getValue() < 0 && 'text-danger')}>{x.getValue().toFixed(2)}</b> },
+    { accessorKey: 'creditos_por_vencer_30d', header: 'Por vencer 30 d (h)', cell: x => x.getValue() ? <Pill tono="warning">{x.getValue().toFixed(2)}</Pill> : '—' },
+    { accessorKey: 'movimientos', header: 'Movimientos' },
+    { id: 'acc', header: '', enableSorting: false, cell: x => <Button size="sm" variant={sel?.id === x.row.original.id ? 'primary' : 'secondary'} onClick={() => setSel(x.row.original)}>Ver movimientos</Button> },
+  ]
+  return <Pantalla>
+    <PageHeader titulo={`Bolsa de horas ${rol === 'jefe' ? 'de mi unidad' : ''}`.trim()} icon={PiggyBank} desc="Saldos del banco de horas por trabajador y su historial de créditos/débitos." />
+    <DataTable data={c.datos ?? []} columns={cols} cargando={c.cargando} error={c.err} reintentar={c.run} buscar="Código o nombre" vacio="Sin trabajadores con saldo."
+      filaClase={s => sel?.id === s.id ? 'bg-accent-soft/60' : undefined}
+      chips={<Chips label="Movimientos" valor={soloMov} onChange={setSoloMov} chips={[{ valor: 'si', label: 'Sólo con movimientos' }, { valor: 'no', label: 'Todos' }]} />} />
     {sel && <Movimientos t={sel} />}
-  </section>
+  </Pantalla>
 }
