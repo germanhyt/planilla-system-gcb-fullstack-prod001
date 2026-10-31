@@ -15,7 +15,7 @@ const lunes = (d: string) => { const x = new Date(d + 'T12:00:00'); return sumar
 export function Horarios({ rol }: { rol: string }) {
   const empresa = useEmpresaFiltro()
   const [trabs, setTrabs] = useState<any[]>([]); const [plantillas, setPlantillas] = useState<any[]>([])
-  const [tid, setTid] = useState(''); const [asigs, setAsigs] = useState<any[]>([]); const [cal, setCal] = useState<any>(null)
+  const [tid, setTid] = useState(''); const [rec, setRec] = useState(0); const [cal, setCal] = useState<any>(null)
   const [desde, setDesde] = useState(lunes(hoy())); const [hasta, setHasta] = useState('')
   const [patron, setPatron] = useState<string[][]>([Array(7).fill('')]); const [nota, setNota] = useState(''); const [err, setErr] = useState('')
   const gestor = rol !== 'trabajador'
@@ -26,7 +26,7 @@ export function Horarios({ rol }: { rol: string }) {
   const propias = plantillas.filter(p => t && p.unidad_id === t.unidad_id && p.activo)
   const cargar = () => {
     if (!tid) return
-    api<any[]>(`/asignaciones-horario?trabajador_id=${tid}`).then(setAsigs).catch(e => setErr(e.message))
+    setRec(x => x + 1)  // S9: la tabla de asignaciones pagina en la BD
     api(`/asignaciones-horario/calendario?trabajador_id=${tid}&desde=${lunes(hoy())}&hasta=${sumar(lunes(hoy()), 27)}`).then(setCal).catch(() => setCal(null))
   }
   useEffect(() => { setErr(''); cargar() }, [tid])
@@ -73,7 +73,7 @@ export function Horarios({ rol }: { rol: string }) {
           <Button size="sm" icon={Minus} onClick={() => setPatron(patron.slice(0, -1))} disabled={patron.length <= 1}>Semana</Button>
           <span className="flex-1" /><Button variant="primary" icon={Save} onClick={guardar}>Asignar</Button></div>
       </Card>
-      <DataTable data={asigs} columns={cols} buscar={false} titulo="Asignaciones" vacio="Sin asignaciones." />
+      <DataTable data={[]} columns={cols} buscar={false} servidor={{ url: '/asignaciones-horario', params: { trabajador_id: tid }, clave: 'asig', recarga: rec }} titulo="Asignaciones" vacio="Sin asignaciones." />
       {cal && <Card>
         <p className="m-0 mb-3 text-sm font-semibold">Próximas 4 semanas <span className="font-normal text-muted">({cal.contrato}, jornada {cal.jornada_diaria_min} min)</span></p>
         <div className="grid grid-cols-7 gap-1.5 text-xs">{DIAS.map(d => <div key={d} className="px-1 font-semibold text-muted">{d}</div>)}

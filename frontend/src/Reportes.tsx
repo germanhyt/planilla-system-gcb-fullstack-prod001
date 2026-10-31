@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { BarChart3, Clock, Download, FileUp, Layers, Moon, RefreshCw, Timer, Users } from 'lucide-react'
 import { api, getToken } from './api'
-import { Aviso, Button, Card, Field, KpiCard, PageHeader, Pantalla, Pill, Toolbar } from './ui'
+import { Button, Card, Field, KpiCard, PageHeader, Pantalla, Pill, Toolbar } from './ui'
 import { DataTable, type ColumnDef } from './ui/DataTable'
 import { confirmar, fallo, ok } from './ui/feedback'
 import { guardarEmpresa, useEmpresaFiltro } from './ui/empresaFiltro'
@@ -16,7 +16,7 @@ interface Fila {
   tardanza_min: number; horas_extra_25: number; horas_extra_35: number; horas_nocturnas: number; recargo_nocturno_horas: number | null
   bono_3am: number; bono_3am_monto: number; banco_horas_mes: number; banco_horas_saldo: number; ausencias: number
 }
-interface Resp { periodo: string; desde: string; hasta: string; periodo_cerrado?: boolean; muestra_recargo_nocturno?: boolean; registros: Fila[]; totales: Record<string, number> }
+interface Resp { periodo: string; desde: string; hasta: string; periodo_cerrado?: boolean; muestra_recargo_nocturno?: boolean; totales: Record<string, number> }
 
 async function descargar(path: string, method = 'GET'): Promise<{ nombre: string; estado: string | null; reutilizada: boolean }> {
   const r = await fetch('/api' + path, { method, headers: { Authorization: `Bearer ${getToken()}` } })
@@ -33,12 +33,12 @@ export function Reportes({ rol }: { rol: string }) {
   const [primera, setPrimera] = useState('')
   const empresa = gestor ? global : (global || primera)
   const { trabajo, seguir, limpiar } = useTrabajo(); const [recarga, setRecarga] = useState(0)
-  const [data, setData] = useState<Resp | null>(null); const [err, setErr] = useState(''); const [cargando, setCargando] = useState(false); const [fmtPc, setFmtPc] = useState<'csv' | 'json'>('csv')
+  const [data, setData] = useState<Resp | null>(null); const [rec, setRec] = useState(0); const [fmtPc, setFmtPc] = useState<'csv' | 'json'>('csv')
   useEffect(() => { api<any[]>('/empresas').then(e => { setEmpresas(e); if (e.length) setPrimera(String(e[0].id)) }).catch(() => {}) }, [])
   const q = () => { const p = new URLSearchParams({ periodo }); if (empresa) p.set('empresa_id', empresa); return p }
-  const cargar = () => { setErr(''); setCargando(true); api<Resp>(`/reportes/consolidado-mensual?${q()}`).then(setData).catch(e => setErr(e.message)).finally(() => setCargando(false)) }
-  useEffect(() => { if (periodo) cargar() }, [empresa, periodo])
-  const recargo = !!(data?.muestra_recargo_nocturno ?? data?.registros.some(r => r.recargo_nocturno_horas !== null))
+  // S9: filas paginadas/ordenadas en la BD; cabecera y totales (todo el periodo) llegan en la misma respuesta
+  const cargar = () => setRec(x => x + 1)
+  const recargo = !!data?.muestra_recargo_nocturno
   const bajar = (formato: string) => descargar(`/reportes/consolidado-mensual?${q()}&formato=${formato}`).then(r => ok(`Descargado ${r.nombre}.`)).catch(fallo)
   const exportar = async () => {
     if (!empresa) { fallo('Seleccione una empresa'); return }
@@ -92,8 +92,7 @@ export function Reportes({ rol }: { rol: string }) {
       <KpiCard icon={Moon} label="Horas nocturnas" value={n(t.total_horas_nocturnas)} accent="teal" sub={`Bono 3 AM: ${t.total_bono_3am ?? 0}`} />
       <KpiCard icon={Users} label="Tardanza total" value={`${t.total_tardanza_min ?? 0} min`} accent="danger" sub={`${data?.desde} → ${data?.hasta}`} />
     </div>}
-    {err && <Aviso tono="danger">{err}</Aviso>}
-    <DataTable data={data?.registros ?? []} columns={cols} cargando={cargando && !data} vacio="Sin asistencia registrada en el periodo." tam={25} buscar="Buscar trabajador o código" titulo="Consolidado mensual" />
+    <DataTable data={[]} columns={cols} servidor={{ url: '/reportes/consolidado-mensual', params: { periodo, empresa_id: empresa }, clave: 'cons', recarga: rec, alRecibir: setData }} vacio="Sin asistencia registrada en el periodo." tam={25} buscar="Buscar trabajador o código" titulo="Consolidado mensual" />
     {gestor && <VersionesExport empresa={empresa || primera} periodo={periodo} recarga={recarga} />}
   </Pantalla>
 }

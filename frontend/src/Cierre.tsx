@@ -5,7 +5,7 @@ import { Aviso, Button, Card, Field, PageHeader, Pantalla, Pill, PillEstado, Too
 import { DataTable, type ColumnDef } from './ui/DataTable'
 import { confirmar, fallo, Modal, ok, pedirTexto } from './ui/feedback'
 import { conEmpresa, filtrarPorEmpresa, guardarEmpresa, useEmpresaFiltro } from './ui/empresaFiltro'
-import { fechaHora, mesLima as mesActual, nombreTrab, useCarga } from './ui/hooks'
+import { fechaHora, mesLima as mesActual, nombreTrab } from './ui/hooks'
 import { ProgresoTrabajo, useTrabajo } from './Trabajos'
 
 const soles = (v: any) => v === null || v === undefined || v === '' ? '—' : `S/ ${Number(v).toFixed(2)}`
@@ -83,12 +83,12 @@ export function Periodos({ rol }: { rol: string }) {
   const [ck, setCk] = useState<any>(null); const [err, setErr] = useState('')
   const [abierto, setAbierto] = useState<string | null>(null)
   const { trabajo, seguir, limpiar } = useTrabajo()
-  const h = useCarga(() => empresa ? api<any[]>(`/periodos/historial?empresa_id=${empresa}`) : Promise.resolve([]), [empresa])
+  const [rec, setRec] = useState(0)  // S9: historial paginado en la BD
   const cargar = () => {
     if (!empresa) return
     setErr('')
     api(`/periodos/checklist?empresa_id=${empresa}&periodo=${periodo}`).then(setCk).catch(e => setErr(e.message))
-    h.run()
+    setRec(x => x + 1)
   }
   useEffect(() => { cargar() }, [empresa, periodo])
   const pend = ck?.total_pendientes ?? 0
@@ -141,6 +141,6 @@ export function Periodos({ rol }: { rol: string }) {
           <span><span className="block text-xs text-muted">{ETIQUETAS[k] || k}</span><b className="text-xl">{v}</b></span></button>)}</div>
       {abierto && ck[abierto] && <pre className="mt-3 max-h-64 overflow-auto rounded-ctl bg-surface-2 p-3 text-xs">{JSON.stringify(ck[abierto], null, 1)}</pre>}
     </Card>}
-    <DataTable data={h.datos ?? []} columns={cols} cargando={h.cargando} error={h.err} buscar={false} titulo="Historial de cierres" vacio="Sin cierres registrados." />
+    {empresa && <DataTable data={[]} columns={cols} servidor={{ url: '/periodos/historial', params: { empresa_id: empresa }, clave: 'hist', recarga: rec }} buscar={false} titulo="Historial de cierres" vacio="Sin cierres registrados." />}
   </Pantalla>
 }

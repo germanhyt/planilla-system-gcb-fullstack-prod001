@@ -111,8 +111,8 @@ export function BolsaHoras({ rol }: { rol: string }) {
   const empresa = useEmpresaFiltro()
   const [sel, setSel] = useState<Saldo | null>(null)
   const [soloMov, setSoloMov] = useState<'si' | 'no'>(rol !== 'trabajador' ? 'si' : 'no')
-  // trabajador: sólo su fila (lista). Gestores: tabla paginada en la BD.
-  const c = useCarga(() => api<Saldo[]>('/banco-horas/saldos'), [])
+  // S9: trabajador pide su propia fila paginada en la BD (page_size=1); gestores: tabla paginada en la BD.
+  const c = useCarga(() => api<{ items: Saldo[] }>('/banco-horas/saldos?page=1&page_size=1').then(r => r.items), [])
   useEffect(() => { if (rol === 'trabajador') c.run().then(s => { if (s?.length) setSel(s[0]) }) }, [])
   if (rol === 'trabajador') return <Pantalla>
     <PageHeader titulo="Mi bolsa de horas" icon={PiggyBank} desc="Horas compensables acumuladas por horas extra destinadas a compensación." />

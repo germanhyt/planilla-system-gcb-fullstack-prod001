@@ -60,6 +60,22 @@ export function rango(page: number, size: number, total: number) {
   return total === 0 ? 'Sin resultados' : `Mostrando ${(page - 1) * size + 1} a ${Math.min(total, page * size)} de ${total}`
 }
 
+/** URL de una página en modo servidor (filtros vacíos se omiten). */
+export function urlPagina(url: string, params: Record<string, unknown> | undefined, pageIndex: number, pageSize: number, sort: string, q: string) {
+  const p = new URLSearchParams()
+  Object.entries(params ?? {}).forEach(([a, b]) => { if (b !== '' && b != null) p.set(a, String(b)) })
+  p.set('page', String(pageIndex + 1)); p.set('page_size', String(pageSize)); if (sort) p.set('sort', sort); if (q) p.set('q', q)
+  return `${url}${url.includes('?') ? '&' : '?'}${p}`
+}
+/** Pide una página; si sigue vigente entrega la respuesta completa a `alRecibir` (resumen/totales/conteos). */
+export async function pedirPagina<T>(fetcher: (u: string) => Promise<Pagina<T>>, url: string, vigente: () => boolean,
+  alRecibir?: (r: any) => void): Promise<Pagina<T> | null> {
+  const r = await fetcher(url)
+  if (!vigente()) return null
+  alRecibir?.(r)
+  return r
+}
+
 export function DataTable<T>({ data, columns, buscar = 'Buscar…', chips, acciones, titulo, cargando, error, reintentar, vacio, tam = 10,
   ordenInicial = [], filaClase, testid, compacta, servidor, tamanos = [10, 20, 50, 100], numerar }: Props<T>) {
   const k = servidor?.clave ?? testid ?? 't'
@@ -75,12 +91,9 @@ export function DataTable<T>({ data, columns, buscar = 'Buscar…', chips, accio
   const sort = sorting[0] ? `${sorting[0].desc ? '-' : ''}${sorting[0].id}` : ''
   const pedir = () => {
     if (!servidor) return
-    const p = new URLSearchParams()
-    Object.entries(servidor.params ?? {}).forEach(([a, b]) => { if (b !== '' && b != null) p.set(a, String(b)) })
-    p.set('page', String(pag.pageIndex + 1)); p.set('page_size', String(pag.pageSize)); if (sort) p.set('sort', sort); if (qd) p.set('q', qd)
     const id = ++pid.current; setSCarga(true); setSErr('')
-    api<Pagina<T>>(`${servidor.url}${servidor.url.includes('?') ? '&' : '?'}${p}`)
-      .then(r => { if (id !== pid.current) return; setRes(r); servidor.alRecibir?.(r); if (r.page - 1 !== pag.pageIndex) setPag(x => ({ ...x, pageIndex: r.page - 1 })) })
+    pedirPagina<T>(u => api<Pagina<T>>(u), urlPagina(servidor.url, servidor.params, pag.pageIndex, pag.pageSize, sort, qd), () => id === pid.current, servidor.alRecibir)
+      .then(r => { if (!r) return; setRes(r); if (r.page - 1 !== pag.pageIndex) setPag(x => ({ ...x, pageIndex: r.page - 1 })) })
       .catch(e => id === pid.current && setSErr(e.message)).finally(() => id === pid.current && setSCarga(false))
   }
   // filtros/búsqueda nuevos -> página 1

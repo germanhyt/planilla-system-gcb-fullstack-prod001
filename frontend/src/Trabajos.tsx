@@ -70,11 +70,6 @@ export async function descargarVersion(id: number) {
 }
 
 export function VersionesExport({ empresa, periodo, recarga }: { empresa: string; periodo: string; recarga: number }) {
-  const [vs, setVs] = useState<any[]>([])
-  useEffect(() => {
-    if (!empresa) { setVs([]); return }
-    api<any[]>(`/reportes/export-planilla-core/versiones?empresa_id=${empresa}&periodo=${periodo}`).then(setVs).catch(() => setVs([]))
-  }, [empresa, periodo, recarga])
   if (!empresa) return null
   const cols: ColumnDef<any, any>[] = [
     { accessorKey: 'version', header: 'Versión', cell: x => <b className="font-semibold">v{x.getValue()}</b> },
@@ -85,5 +80,5 @@ export function VersionesExport({ empresa, periodo, recarga }: { empresa: string
     { accessorKey: 'generado_en', header: 'Generado', cell: x => fechaHora(x.getValue()) },
     { id: 'acc', header: '', enableSorting: false, cell: x => <Button size="sm" icon={Download} onClick={() => descargarVersion(x.row.original.id).catch(fallo)}>Descargar</Button> },
   ]
-  return <div data-testid="versiones-export"><DataTable data={vs} columns={cols} buscar={false} vacio="Sin exportaciones registradas." titulo={`Versiones exportadas ${periodo}`} ordenInicial={[{ id: 'version', desc: true }]} /></div>
+  return <div data-testid="versiones-export"><DataTable data={[]} columns={cols} buscar={false} servidor={{ url: '/reportes/export-planilla-core/versiones', params: { empresa_id: empresa, periodo }, clave: 'vers', recarga }} vacio="Sin exportaciones registradas." titulo={`Versiones exportadas ${periodo}`} ordenInicial={[{ id: 'version', desc: true }]} /></div>
 }

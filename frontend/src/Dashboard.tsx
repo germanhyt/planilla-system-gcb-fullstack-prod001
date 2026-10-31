@@ -18,10 +18,11 @@ const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'o
 const etiquetaMes = (p: string) => `${MESES[Number(p.slice(5)) - 1]} ${p.slice(2, 4)}`
 interface Resumen { trabajadas: number; normales: number; he25: number; he35: number; nocturnas: number; tardanzaH: number; ausencias: number; trabajadores: number }
 const cero: Resumen = { trabajadas: 0, normales: 0, he25: 0, he35: 0, nocturnas: 0, tardanzaH: 0, ausencias: 0, trabajadores: 0 }
-const resumir = (r: any): Resumen => { const t = r?.totales ?? {}
+/** Totales de un periodo (``/reportes/resumen-mensual``, agregado en la BD). */
+export const resumir = (t: any): Resumen => { t = t ?? {}
   return { trabajadas: +t.total_horas_trabajadas || 0, normales: +t.total_horas_normales || 0, he25: +t.total_horas_extra_25 || 0, he35: +t.total_horas_extra_35 || 0,
     nocturnas: +t.total_horas_nocturnas || 0, tardanzaH: (+t.total_tardanza_min || 0) / 60, trabajadores: +t.total_trabajadores || 0,
-    ausencias: (r?.registros ?? []).reduce((a: number, x: any) => a + (+x.ausencias || 0), 0) } }
+    ausencias: +t.total_ausencias || 0 } }
 const sumar = (xs: Resumen[]) => xs.reduce((a, b) => ({ trabajadas: a.trabajadas + b.trabajadas, normales: a.normales + b.normales, he25: a.he25 + b.he25, he35: a.he35 + b.he35,
   nocturnas: a.nocturnas + b.nocturnas, tardanzaH: a.tardanzaH + b.tardanzaH, ausencias: a.ausencias + b.ausencias, trabajadores: Math.max(a.trabajadores, b.trabajadores) }), cero)
 const delta = (a: number, b: number) => b ? ((a - b) / b) * 100 : null
@@ -40,16 +41,18 @@ export function Dashboard({ rol }: { rol: string }) {
   const empresa = useEmpresaFiltro(); const k = useTokens()
   const [per, setPer] = useState<Periodo>('mes')
   const [meses, setMeses] = useState<Record<string, Resumen> | null>(null); const [err, setErr] = useState('')
-  const [pend, setPend] = useState<Item[] | null>(null); const [alertas, setAlertas] = useState<any[]>([])
+  const [pendN, setPendN] = useState<number | null>(null); const [alertas, setAlertas] = useState<any[]>([]); const [rec, setRec] = useState(0)
   const actual = mesLima(); const lista = useMemo(() => Array.from({ length: 9 }, (_, i) => mesMenos(actual, 8 - i)), [actual])
   const cargar = () => {
     setErr(''); setMeses(null)
-    Promise.all(lista.map(p => api(`/reportes/consolidado-mensual?${conEmpresa({ periodo: p }, empresa)}`).then(resumir).catch(e => { if (p === actual) throw e; return cero })))
-      .then(rs => setMeses(Object.fromEntries(lista.map((p, i) => [p, rs[i]])))).catch(e => setErr(e.message))
-    const hace = new Date(Date.now() - 30 * 86400000).toLocaleDateString('en-CA', { timeZone: 'America/Lima' })
-    api<Item[]>(`/excepciones/bandeja?${conEmpresa({ desde: hace, hasta: new Date().toLocaleDateString('en-CA', { timeZone: 'America/Lima' }), estado: 'pendiente' }, empresa)}`).then(setPend).catch(() => setPend([]))
-    if (rol !== 'jefe') api<any[]>(`/notificaciones?${conEmpresa({ solo_no_leidas: true }, empresa)}`).then(a => setAlertas(a.slice(0, 5))).catch(() => setAlertas([]))
+    // S9: un solo agregado SQL por periodo (antes 9 consolidados con todas las filas)
+    api<Record<string, any>>(`/reportes/resumen-mensual?${conEmpresa({ periodos: lista.join(',') }, empresa)}`)
+      .then(r => setMeses(Object.fromEntries(lista.map(p => [p, resumir(r[p])])))).catch(e => setErr(e.message))
+    setRec(x => x + 1)
+    if (rol !== 'jefe') api<{ items: any[] }>(`/notificaciones?${conEmpresa({ solo_no_leidas: true, page: 1, page_size: 5 }, empresa)}`).then(a => setAlertas(a.items)).catch(() => setAlertas([]))
   }
+  const hoyL = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Lima' })
+  const hace = new Date(Date.now() - 30 * 86400000).toLocaleDateString('en-CA', { timeZone: 'America/Lima' })
   useEffect(cargar, [empresa])
   const ventana = (p: Periodo, desplaz = 0): string[] => { const n = p === 'trimestre' ? 3 : 1; const fin = (p === 'anterior' ? 1 : 0) + desplaz * n
     return Array.from({ length: n }, (_, i) => mesMenos(actual, fin + i)) }
@@ -92,9 +95,10 @@ export function Dashboard({ rol }: { rol: string }) {
       </div>
     </>}
     <div className="grid gap-4 xl:grid-cols-3">
-      <div className="xl:col-span-2"><DataTable data={pend ?? []} columns={cols} cargando={!pend} buscar={false} tam={6} titulo="Excepciones recientes por decidir" vacio="Sin excepciones pendientes en los últimos 30 días." /></div>
+      <div className="xl:col-span-2"><DataTable data={[]} columns={cols} buscar={false} tam={6} tamanos={[6]}
+        servidor={{ url: '/excepciones/bandeja', params: { desde: hace, hasta: hoyL, estado: 'pendiente', empresa_id: empresa }, clave: 'dpend', recarga: rec, alRecibir: r => setPendN(r.total) }} titulo="Excepciones recientes por decidir" vacio="Sin excepciones pendientes en los últimos 30 días." /></div>
       <Card><p className="m-0 mb-3 flex items-center gap-2 font-semibold"><Bell size={16} className="text-accent" />Alertas</p>
-        {rol === 'jefe' ? <p className="text-sm text-muted">{pend?.length ?? 0} excepciones pendientes en su unidad.</p>
+        {rol === 'jefe' ? <p className="text-sm text-muted">{pendN ?? 0} excepciones pendientes en su unidad.</p>
           : alertas.length ? <ul className="m-0 grid list-none gap-2 p-0">{alertas.map(a => <li key={a.id} className="rounded-ctl border border-border p-2.5 text-sm">
             <Pill tono="warning">{a.periodo}</Pill> <span className="mt-1 block">{a.mensaje}</span></li>)}</ul>
           : <p className="text-sm text-muted">Sin alertas no leídas.</p>}</Card>
