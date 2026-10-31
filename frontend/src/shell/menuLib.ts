@@ -9,7 +9,7 @@ export function construirMenu(r: Rol): GrupoMenu[] {
   const g = (titulo: string, items: [string, string, string, boolean][]): GrupoMenu =>
     ({ titulo, items: items.filter(i => i[3]).map(([k, label, icon]) => ({ k, label, icon })) })
   return [
-    g('Principal', [['perfil', 'Mi perfil', 'user', true], ['marcar', 'Marcar asistencia', 'fingerprint', trabajador],
+    g('Principal', [['dashboard', 'Dashboard', 'dashboard', jefe], ['perfil', 'Mi perfil', 'user', true], ['marcar', 'Marcar asistencia', 'fingerprint', trabajador],
       ['mis-marcas', 'Mis marcas', 'list', T], ['notificaciones', 'Notificaciones', 'bell', rrhh],
       ['bolsa', T ? 'Mi bolsa de horas' : 'Bolsa de horas', 'piggy', true]]),
     g('Asistencia', [['marcas', 'Marcas', 'clock', jefe], ['horarios', 'Horarios', 'calendar', jefe],
@@ -25,6 +25,9 @@ export function construirMenu(r: Rol): GrupoMenu[] {
 
 export function migas(grupos: GrupoMenu[], vista: string): [string, string] {
   for (const g of grupos) for (const i of g.items) if (i.k === vista) return [g.titulo, i.label]
-  return ['Principal', 'Mi perfil']
+  return ['Principal', vista === 'dashboard' ? 'Dashboard' : 'Mi perfil']
 }
 export const puedeFiltrarEmpresa = (r: Rol) => r === 'admin' || r === 'rrhh'
+
+/** Vista inicial: dashboard para jefe/rrhh/admin; marcar para trabajador (mobile-first). */
+export const vistaInicial = (r: Rol) => r === 'trabajador' ? 'marcar' : 'dashboard'
