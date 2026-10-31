@@ -9,6 +9,7 @@
 - Jefe: sólo su unidad. RRHH/admin: todo.
 """
 import csv
+import re
 from collections import defaultdict
 from datetime import date, timedelta
 from io import BytesIO, StringIO
@@ -402,7 +403,6 @@ def resumen_mensual(
     user: Usuario = Depends(current_user),
 ):
     """S9 Dashboard: totales del consolidado por periodo agregados en la BD (sin cargar filas por trabajador)."""
-    import re
     lista = [p.strip() for p in periodos.split(",") if p.strip()]
     if not lista or len(lista) > 24 or any(not re.match(PERIODO, p) for p in lista):
         raise HTTPException(422, "periodos: lista de 1 a 24 meses YYYY-MM")
